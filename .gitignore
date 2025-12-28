@@ -1,0 +1,79 @@
+```
+# Android build outputs
+*.apk
+*.aar
+*.so
+*.dex
+
+# Android build directories
+build/
+.gradle/
+app/build/
+app/intermediates/
+app/outputs/
+
+# Android local config
+local.properties
+gradle.properties
+*.iml
+
+# Dependencies
+node_modules/
+vendor/
+
+# Python artifacts (if any)
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Logs
+*.log
+!*.md.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Environment variables
+.env
+.env.local
+.env.*
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Coverage and testing
+coverage/
+htmlcov/
+.coverage
+.pytest_cache/
+.mypy_cache/
+nyc_output/
+coverage-final.json
+
+# Distribution / packaging
+dist/
+target/
+*.tar.gz
+*.zip
+
+# IDE
+*.swp
+*.swo
+*~
+```
