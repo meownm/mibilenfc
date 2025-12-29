@@ -1,25 +1,9 @@
 package com.example.emrtdreader.utils
 
 import android.util.Log
-
-enum class MrzFormat { TD3, TD1 }
-
-data class MrzCandidate(
-    val line1: String,
-    val line2: String,
-    val line3: String? = null,
-    val score: Int,
-    val format: MrzFormat
-) {
-    fun toResult() = MrzResult(line1, line2, line3, format)
-}
-
-data class MrzResult(
-    val line1: String,
-    val line2: String,
-    val line3: String?,
-    val format: MrzFormat
-)
+import com.example.emrtdreader.models.MrzCandidate
+import com.example.emrtdreader.models.MrzFormat
+import com.example.emrtdreader.models.MrzResult
 
 object MrzNormalizer {
 

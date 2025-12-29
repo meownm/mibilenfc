@@ -7,9 +7,9 @@ import android.graphics.Rect
 import android.graphics.YuvImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.example.emrtdreader.models.MrzResult
 import com.example.emrtdreader.utils.MrzBurstAggregator
 import com.example.emrtdreader.utils.MrzNormalizer
-import com.example.emrtdreader.utils.MrzResult
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
