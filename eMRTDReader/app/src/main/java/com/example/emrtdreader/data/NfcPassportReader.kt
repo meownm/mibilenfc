@@ -4,9 +4,9 @@ import android.nfc.Tag
 import android.nfc.tech.IsoDep
 import com.example.emrtdreader.crypto.AuthResult
 import com.example.emrtdreader.crypto.CryptoHelper
+import com.example.emrtdreader.domain.PassportData
 import com.example.emrtdreader.domain.PassportReadResult
 import com.example.emrtdreader.error.PassportReadException
-import com.example.emrtdreader.models.AccessKey
 import com.example.emrtdreader.models.MrzResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -60,13 +60,18 @@ class NfcPassportReader {
                 AuthResult.SOD_NOT_FOUND
             }
 
+            val mrzInfo = dg1.mrzInfo
             val photo = dg2Bytes?.let { DG2File(ByteArrayInputStream(it)).faceInfos.firstOrNull()?.faceImageInfos?.firstOrNull()?.imageInputStream?.readBytes() }
 
             val passportData = PassportData(
-                mrz = mrzResult.line1 + "\n" + mrzResult.line2 + (mrzResult.line3?.let { "\n" + it } ?: ""),
-                dg1 = dg1Bytes,
-                dg2 = dg2Bytes,
-                sod = sodBytes,
+                documentNumber = mrzInfo.documentNumber,
+                surname = mrzInfo.primaryIdentifier,
+                givenNames = mrzInfo.secondaryIdentifier,
+                nationality = mrzInfo.nationality,
+                dateOfBirth = mrzInfo.dateOfBirth,
+                sex = mrzInfo.gender.toString(),
+                dateOfExpiry = mrzInfo.dateOfExpiry,
+                personalNumber = mrzInfo.personalNumber,
                 photo = photo
             )
 

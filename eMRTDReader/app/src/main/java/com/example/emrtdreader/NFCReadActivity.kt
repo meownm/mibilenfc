@@ -11,7 +11,6 @@ import androidx.lifecycle.lifecycleScope
 import com.example.emrtdreader.data.NfcPassportReader
 import com.example.emrtdreader.data.PassportData
 import com.example.emrtdreader.databinding.ActivityNfcReadBinding
-import com.example.emrtdreader.models.AccessKey
 import com.example.emrtdreader.models.MrzResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -72,8 +71,7 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     override fun onTagDiscovered(tag: Tag) {
         lifecycleScope.launch {
             runCatching { 
-                val accessKey = AccessKey.Mrz(mrzResult!!.line2.substring(0, 9), mrzResult!!.line2.substring(13, 19), mrzResult!!.line2.substring(21, 27))
-                withContext(Dispatchers.IO) { reader.read(tag, accessKey) }
+                withContext(Dispatchers.IO) { reader.read(tag, mrzResult!!) }
             }.onSuccess { passportReadResult ->
                 openResult(passportReadResult.passportData)
             }.onFailure { error ->

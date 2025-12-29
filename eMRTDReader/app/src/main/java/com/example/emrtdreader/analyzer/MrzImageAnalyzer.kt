@@ -7,9 +7,9 @@ import android.graphics.Rect
 import android.graphics.YuvImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import com.example.emrtdreader.models.MrzResult
 import com.example.emrtdreader.utils.MrzBurstAggregator
 import com.example.emrtdreader.utils.MrzNormalizer
+import com.example.emrtdreader.utils.MrzResult
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -26,12 +26,18 @@ class MrzImageAnalyzer(
 
     private val scope = CoroutineScope(Dispatchers.Default)
     private val aggregator = MrzBurstAggregator()
+    private var finished = false
 
     private var lastAnalysisTime = 0L
-    private val analysisIntervalMs = 300L   // ~3 fps
+    private val analysisIntervalMs = 300L
 
     @androidx.camera.core.ExperimentalGetImage
     override fun analyze(image: ImageProxy) {
+        if (finished) {
+            image.close()
+            return
+        }
+
         val now = System.currentTimeMillis()
         if (now - lastAnalysisTime < analysisIntervalMs) {
             image.close()
@@ -57,6 +63,7 @@ class MrzImageAnalyzer(
         
         val aggregated = aggregator.aggregate(normalizedResult)
         if (aggregated != null && aggregated.confidence >= 3) {
+            finished = true
             onFinalMrz(aggregated.result)
             aggregator.reset()
         }
@@ -67,8 +74,8 @@ class MrzImageAnalyzer(
             val image = InputImage.fromBitmap(bitmap, 0)
             TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 .process(image)
-                .addOnSuccessListener { cont.resume(it.text) }
-                .addOnFailureListener { cont.resume("") }
+                .addOnSuccessListener { if (cont.isActive) cont.resume(it.text) }
+                .addOnFailureListener { if (cont.isActive) cont.resume("") }
         }
 
     private fun cropMrzRegion(bitmap: Bitmap): Bitmap {

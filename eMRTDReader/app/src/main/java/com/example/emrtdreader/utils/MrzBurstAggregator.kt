@@ -1,5 +1,8 @@
 package com.example.emrtdreader.utils
 
+import com.example.emrtdreader.models.MrzFormat
+import com.example.emrtdreader.models.MrzResult
+
 class MrzBurstAggregator(
     private val minFrames: Int = 3,
     private val maxFrames: Int = 10
