@@ -4,173 +4,104 @@ import android.content.Intent
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
-import android.widget.ProgressBar
-import android.widget.TextView
+import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.emrtdreader.data.NfcPassportReader
-import com.example.emrtdreader.domain.AccessKey
-import com.example.emrtdreader.error.PassportReadException
-import com.example.emrtdreader.utils.MRZParser
+import com.example.emrtdreader.data.PassportData
+import com.example.emrtdreader.databinding.ActivityNfcReadBinding
+import com.example.emrtdreader.models.AccessKey
+import com.example.emrtdreader.models.MrzResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     companion object {
-        const val EXTRA_MRZ_STRING = "EXTRA_MRZ_STRING"
+        const val EXTRA_MRZ_RESULT = "EXTRA_MRZ_RESULT"
         const val EXTRA_DOC_NUM = "EXTRA_DOC_NUM"
-        const val EXTRA_DOB = "EXTRA_DOB" // YYMMDD
-        const val EXTRA_DOE = "EXTRA_DOE" // YYMMDD
+        const val EXTRA_DOB = "EXTRA_DOB"
+        const val EXTRA_DOE = "EXTRA_DOE"
     }
 
-    private lateinit var instructionTextView: TextView
-    private lateinit var statusTextView: TextView
-    private lateinit var progressBar: ProgressBar
-    private lateinit var progressTextView: TextView
-    private lateinit var canEditText: EditText
-    private lateinit var readNfcButton: Button
-
+    private lateinit var binding: ActivityNfcReadBinding
     private var nfcAdapter: NfcAdapter? = null
     private val reader = NfcPassportReader()
-
-    private var accessKey: AccessKey.Mrz? = null
+    private var mrzResult: MrzResult? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_nfc_read)
+        binding = ActivityNfcReadBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        instructionTextView = findViewById(R.id.instructionTextView)
-        statusTextView = findViewById(R.id.statusTextView)
-        progressBar = findViewById(R.id.progressBar)
-        progressTextView = findViewById(R.id.progressTextView)
-        canEditText = findViewById(R.id.canEditText)
-        readNfcButton = findViewById(R.id.readNfcButton)
-
-        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
-
-        val mrzString = intent.getStringExtra(EXTRA_MRZ_STRING)
-        if (mrzString != null) {
-            accessKey = parseMrz(mrzString)
-        } else {
+        mrzResult = intent.getParcelableExtra(EXTRA_MRZ_RESULT)
+        if (mrzResult == null) {
             val docNum = intent.getStringExtra(EXTRA_DOC_NUM)
             val dob = intent.getStringExtra(EXTRA_DOB)
             val doe = intent.getStringExtra(EXTRA_DOE)
             if (docNum != null && dob != null && doe != null) {
-                accessKey = AccessKey.Mrz(docNum, dob, doe)
+                val line2 = "$docNum<...$dob...$doe..."
+                mrzResult = MrzResult(line1 = "", line2 = line2, line3 = null, format = com.example.emrtdreader.models.MrzFormat.TD3)
             }
         }
 
-        readNfcButton.setOnClickListener {
-            if (accessKey == null) {
-                setError("Access key is invalid. Go back and try again.")
-                return@setOnClickListener
-            }
-            enableReaderMode()
+        if (mrzResult == null) {
+            Toast.makeText(this, "No valid MRZ data found.", Toast.LENGTH_LONG).show()
+            finish()
+            return
         }
 
-        updateUiReady()
-    }
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
+        if (nfcAdapter == null) {
+            Toast.makeText(this, "NFC is not available on this device.", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
 
-    override fun onResume() {
-        super.onResume()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        disableReaderMode()
+        binding.readNfcButton.setOnClickListener { enableReaderMode() }
     }
 
     private fun enableReaderMode() {
-        val adapter = nfcAdapter ?: run {
-            setError("NFC not available on this device")
-            return
-        }
-        if (!adapter.isEnabled) {
-            setError("NFC is disabled. Enable NFC and try again.")
-            return
-        }
-
-        progressBar.isIndeterminate = true
-        progressTextView.text = "Waiting for NFC tag..."
-        statusTextView.text = ""
-        instructionTextView.text = "Hold your passport to the NFC area"
-
-        val flags = NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
-        adapter.enableReaderMode(this, this, flags, null)
-        readNfcButton.isEnabled = false
-    }
-
-    private fun disableReaderMode() {
-        nfcAdapter?.disableReaderMode(this)
-        readNfcButton.isEnabled = true
+        binding.readNfcButton.visibility = View.GONE
+        binding.progressBar.visibility = View.VISIBLE
+        nfcAdapter?.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B, null)
     }
 
     override fun onTagDiscovered(tag: Tag) {
-        val key = accessKey ?: return
-
-        runOnUiThread {
-            progressTextView.text = "Reading passport..."
-            statusTextView.text = ""
-        }
-
         lifecycleScope.launch {
-            try {
-                val result = reader.read(tag, key)
+            runCatching { 
+                val accessKey = AccessKey.Mrz(mrzResult!!.line2.substring(0, 9), mrzResult!!.line2.substring(13, 19), mrzResult!!.line2.substring(21, 27))
+                withContext(Dispatchers.IO) { reader.read(tag, accessKey) }
+            }.onSuccess { passportReadResult ->
+                openResult(passportReadResult.passportData)
+            }.onFailure { error ->
                 runOnUiThread {
-                    disableReaderMode()
-                    openResult(result.passportData, result.json, result.authResult.name)
-                }
-            } catch (e: PassportReadException) {
-                runOnUiThread {
-                    disableReaderMode()
-                    setError(e.message ?: "Read failed")
-                }
-            } catch (t: Throwable) {
-                runOnUiThread {
-                    disableReaderMode()
-                    setError("Read failed: ${t.javaClass.simpleName}")
+                    Toast.makeText(this@NFCReadActivity, "Error: ${error.message}", Toast.LENGTH_LONG).show()
+                    finish()
                 }
             }
         }
     }
 
-    private fun openResult(passportData: com.example.emrtdreader.domain.PassportData, json: String?, auth: String) {
+    private fun openResult(passportData: PassportData) {
         val intent = Intent(this, ResultActivity::class.java).apply {
             putExtra("PASSPORT_DATA", passportData)
-            putExtra("PASSPORT_JSON", json)
-            putExtra("AUTH_RESULT", auth)
         }
         startActivity(intent)
         finish()
     }
 
-    private fun parseMrz(raw: String?): AccessKey.Mrz? {
-        if (raw.isNullOrBlank()) return null
-        // This needs a full MRZ parser, which is not available in MrzNormalizer
-        // This part needs to be re-implemented
-        return null
+    override fun onPause() {
+        super.onPause()
+        nfcAdapter?.disableReaderMode(this)
     }
 
-    private fun updateUiReady() {
-        if (accessKey == null) {
-            instructionTextView.text = "Access key not available"
-            progressTextView.text = ""
-            statusTextView.text = "Go back and scan or enter data first."
-            readNfcButton.isEnabled = false
-            return
+    override fun onResume() {
+        super.onResume()
+        if (binding.progressBar.visibility == View.VISIBLE) {
+             nfcAdapter?.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B, null)
         }
-        instructionTextView.text = "Optionally enter CAN (6 digits) and press Start"
-        progressTextView.text = ""
-        statusTextView.text = ""
-        readNfcButton.isEnabled = true
-    }
-
-    private fun setError(msg: String) {
-        instructionTextView.text = "Error"
-        progressBar.isIndeterminate = false
-        progressTextView.text = ""
-        statusTextView.text = msg
     }
 }

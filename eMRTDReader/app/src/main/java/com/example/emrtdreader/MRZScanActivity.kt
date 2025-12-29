@@ -15,7 +15,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import com.example.emrtdreader.analyzer.MrzImageAnalyzer
 import com.example.emrtdreader.databinding.ActivityMrzScanBinding
-import com.example.emrtdreader.utils.MrzResult
+import com.example.emrtdreader.models.MrzResult
 import java.util.concurrent.Executors
 
 class MRZScanActivity : AppCompatActivity() {
@@ -47,8 +47,7 @@ class MRZScanActivity : AppCompatActivity() {
     private fun setupClickListeners() {
         binding.continueButton.setOnClickListener {
             val result = latestMrzResult ?: return@setOnClickListener
-            // TODO: Create a new parser that extracts fields from a validated MrzResult
-            Toast.makeText(this, "Parsing from aggregated result is not implemented yet.", Toast.LENGTH_LONG).show()
+            goToNfcActivity(result)
         }
 
         binding.enterManuallyButton.setOnClickListener { showManualInput(true) }
@@ -112,6 +111,13 @@ class MRZScanActivity : AppCompatActivity() {
         binding.continueButton.visibility = View.VISIBLE
     }
     
+    private fun goToNfcActivity(mrzResult: MrzResult) {
+        val intent = Intent(this, NFCReadActivity::class.java).apply {
+            putExtra(NFCReadActivity.EXTRA_MRZ_RESULT, mrzResult)
+        }
+        startActivity(intent)
+    }
+
     private fun goToNfcActivity(docNum: String, dob: String, doe: String) {
         val intent = Intent(this, NFCReadActivity::class.java).apply {
             putExtra(NFCReadActivity.EXTRA_DOC_NUM, docNum)

@@ -3,62 +3,48 @@ package com.example.emrtdreader
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
-import android.widget.ImageView
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import com.example.emrtdreader.model.PassportData
+import com.example.emrtdreader.data.PassportData
+import com.example.emrtdreader.databinding.ActivityResultBinding
 
 class ResultActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_PASSPORT_DATA = "EXTRA_PASSPORT_DATA"
+    }
+
+    private lateinit var binding: ActivityResultBinding
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_result)
-
-        val photoImageView: ImageView = findViewById(R.id.photoImageView)
-        val verificationStatusTextView: TextView = findViewById(R.id.verificationStatusTextView)
-
-        val nameTextView: TextView = findViewById(R.id.nameTextView)
-        val passportNumberTextView: TextView = findViewById(R.id.passportNumberTextView)
-        val nationalityTextView: TextView = findViewById(R.id.nationalityTextView)
-        val dateOfBirthTextView: TextView = findViewById(R.id.dateOfBirthTextView)
-        val expiryDateTextView: TextView = findViewById(R.id.expiryDateTextView)
-        val personalNumberTextView: TextView = findViewById(R.id.personalNumberTextView)
-        val mrzDataTextView: TextView = findViewById(R.id.mrzDataTextView)
+        binding = ActivityResultBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
         val passportData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            intent.getSerializableExtra("PASSPORT_DATA", PassportData::class.java)
+            intent.getParcelableExtra(EXTRA_PASSPORT_DATA, PassportData::class.java)
         } else {
             @Suppress("DEPRECATION")
-            intent.getSerializableExtra("PASSPORT_DATA") as? PassportData
+            intent.getParcelableExtra(EXTRA_PASSPORT_DATA)
         }
-        val json = intent.getStringExtra("PASSPORT_JSON").orEmpty()
-        val auth = intent.getStringExtra("AUTH_RESULT").orEmpty()
-
-        verificationStatusTextView.text = if (auth.isNotBlank()) "Passive Auth: $auth" else "Passive Auth: N/A"
 
         if (passportData != null) {
-            val fullName = listOf(passportData.surname, passportData.givenNames).filter { it.isNotBlank() }.joinToString(" ")
-            nameTextView.text = fullName.ifBlank { "-" }
-            passportNumberTextView.text = passportData.documentNumber.ifBlank { "-" }
-            nationalityTextView.text = passportData.nationality.ifBlank { "-" }
-            dateOfBirthTextView.text = passportData.dateOfBirth.ifBlank { "-" }
-            expiryDateTextView.text = passportData.dateOfExpiry.ifBlank { "-" }
-            personalNumberTextView.text = passportData.personalNumber.ifBlank { "-" }
+            displayPassportData(passportData)
+        } else {
+            binding.mrzDataTextView.text = "No valid passport data found."
+        }
+    }
 
-            val photo = passportData.photo
-            if (photo != null && photo.isNotEmpty()) {
-                val bmp = BitmapFactory.decodeByteArray(photo, 0, photo.size)
-                if (bmp != null) {
-                    photoImageView.setImageBitmap(bmp)
-                } else {
-                    // Many passports use JPEG2000; BitmapFactory can't decode it.
-                    photoImageView.setImageResource(R.drawable.photo_placeholder)
-                }
-            } else {
-                photoImageView.setImageResource(R.drawable.photo_placeholder)
-            }
+    private fun displayPassportData(passport: PassportData) {
+        binding.mrzDataTextView.text = passport.mrz
+
+        passport.photo?.let {
+            val bmp = BitmapFactory.decodeByteArray(it, 0, it.size)
+            binding.photoImageView.setImageBitmap(bmp)
         }
 
-        mrzDataTextView.text = if (json.isNotBlank()) json else "-"
+        // TODO: Create a new layout or views to display other DG1 fields if needed
+        // For example: 
+        // val dg1 = DG1File(passport.dg1)
+        // binding.nameTextView.text = dg1.mrzInfo.primaryIdentifier + " " + dg1.mrzInfo.secondaryIdentifier
     }
 }

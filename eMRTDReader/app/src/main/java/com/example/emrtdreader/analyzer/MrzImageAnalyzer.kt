@@ -7,9 +7,9 @@ import android.graphics.Rect
 import android.graphics.YuvImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.example.emrtdreader.models.MrzResult
 import com.example.emrtdreader.utils.MrzBurstAggregator
 import com.example.emrtdreader.utils.MrzNormalizer
-import com.example.emrtdreader.utils.MrzResult
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -40,25 +40,25 @@ class MrzImageAnalyzer(
         lastAnalysisTime = now
 
         scope.launch {
-            processImage(image)
+            try {
+                processImage(image)
+            } finally {
+                image.close()
+            }
         }
     }
 
     private suspend fun processImage(image: ImageProxy) {
-        try {
-            val bitmap = imageProxyToBitmap(image)
-            val mrzBitmap = cropMrzRegion(bitmap)
+        val bitmap = imageProxyToBitmap(image)
+        val mrzBitmap = cropMrzRegion(bitmap)
 
-            val ocrText = runOcr(mrzBitmap)
-            val normalizedResult = MrzNormalizer.normalize(ocrText)
-            
-            val aggregated = aggregator.aggregate(normalizedResult)
-            if (aggregated != null && aggregated.confidence >= 3) {
-                onFinalMrz(aggregated.result)
-                aggregator.clear()
-            }
-        } finally {
-            image.close()
+        val ocrText = runOcr(mrzBitmap)
+        val normalizedResult = MrzNormalizer.normalize(ocrText)
+        
+        val aggregated = aggregator.aggregate(normalizedResult)
+        if (aggregated != null && aggregated.confidence >= 3) {
+            onFinalMrz(aggregated.result)
+            aggregator.reset()
         }
     }
 
@@ -74,7 +74,6 @@ class MrzImageAnalyzer(
     private fun cropMrzRegion(bitmap: Bitmap): Bitmap {
         val h = bitmap.height
         val w = bitmap.width
-        // A simple crop assuming MRZ is in the bottom 35% of the image
         return Bitmap.createBitmap(bitmap, 0, (h * 0.65).toInt(), w, (h * 0.35).toInt())
     }
 

@@ -11,6 +11,10 @@ class MrzBurstAggregator(
             burstResults.add(newResult)
         }
 
+        if (burstResults.size > maxFrames) {
+            burstResults.removeAt(0)
+        }
+
         if (burstResults.size < minFrames) return null
 
         val finalResult = burstResults
@@ -18,10 +22,6 @@ class MrzBurstAggregator(
             .values
             .mapNotNull { aggregateSameFormat(it) }
             .maxByOrNull { it.confidence }
-
-        if (burstResults.size >= maxFrames) {
-            burstResults.clear()
-        }
 
         return finalResult
     }
@@ -72,7 +72,7 @@ class MrzBurstAggregator(
     private fun countValidTd3(results: List<MrzResult>): Int = results.count { MrzChecksumValidator.isValidTd3(it) }
     private fun countValidTd1(results: List<MrzResult>): Int = results.count { MrzChecksumValidator.isValidTd1(it) }
     
-    fun clear() = burstResults.clear()
+    fun reset() = burstResults.clear()
 }
 
 object MrzChecksumValidator {
@@ -83,7 +83,7 @@ object MrzChecksumValidator {
         data.forEachIndexed { i, char ->
             val value = when (char) {
                 in '0'..'9' -> char.digitToInt()
-                in 'A'..'Z' -> char - 'A' + 10
+                in 'A'..'Z' -> char.code - 'A'.code + 10
                 '<' -> 0
                 else -> 0
             }
