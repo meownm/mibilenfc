@@ -19,11 +19,16 @@ subprojects {
             force "org.bouncycastle:bcpkix-jdk15to18:1.70"
 
             eachDependency { details ->
-                if (details.requested.group == "org.bouncycastle") {
-                    if (details.requested.name.contains("jdk18on")) {
-                        details.useVersion("1.70")
-                        details.because("Android does not support Java 21 bytecode")
-                    }
+                // jmrtd depends on BouncyCastle's "jdk18on" artifacts, which are not
+                // compatible with Android. We substitute them with the "jdk15to18"
+                // variants.
+                if (details.requested.group == "org.bouncycastle" && details.requested.name.contains("jdk18on")) {
+                    details.useTarget(
+                        group: details.requested.group,
+                        name: details.requested.name.replace("jdk18on", "jdk15to18"),
+                        version: "1.70"
+                    )
+                    details.because("Android requires the 'jdk15to18' Bouncy Castle artifacts.")
                 }
             }
         }
