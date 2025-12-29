@@ -17,6 +17,10 @@ import java.util.concurrent.Executors
 
 class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
+    companion object {
+        const val EXTRA_MRZ = "MRZ_DATA"
+    }
+
     private lateinit var instructionTextView: TextView
     private lateinit var statusTextView: TextView
     private lateinit var progressBar: ProgressBar
@@ -44,7 +48,7 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
 
-        mrzRaw = intent.getStringExtra("MRZ_DATA")
+        mrzRaw = intent.getStringExtra(EXTRA_MRZ)
         mrzKey = parseMrz(mrzRaw)
 
         readNfcButton.setOnClickListener {

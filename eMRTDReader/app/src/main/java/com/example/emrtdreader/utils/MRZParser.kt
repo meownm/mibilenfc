@@ -8,6 +8,33 @@ import java.util.*
  * according to ICAO 9303 standards
  */
 object MRZParser {
+
+    /**
+     * Tries to extract a valid MRZ string from a larger block of text.
+     * @param raw The raw text from OCR
+     * @return The extracted MRZ string, or null if not found
+     */
+    fun tryExtractMrz(raw: String): String? {
+        val lines = raw.lines().map { normalizeMRZ(it) }
+
+        // Try to find a 2-line TD3 MRZ
+        for (i in 0 until lines.size - 1) {
+            val twoLines = lines[i] + "\n" + lines[i+1]
+            if (parseMRZ(twoLines) != null) {
+                return twoLines
+            }
+        }
+
+        // Try to find a 3-line TD1 MRZ
+        for (i in 0 until lines.size - 2) {
+            val threeLines = lines[i] + "\n" + lines[i+1] + "\n" + lines[i+2]
+            if (parseMRZ(threeLines) != null) {
+                return threeLines
+            }
+        }
+
+        return null
+    }
     
     /**
      * Parses MRZ string and validates checksums
@@ -30,39 +57,42 @@ object MRZParser {
     }
     
     private fun parseTD3(line1: String, line2: String): MRZData? {
-        if (line1.length < 44 || line2.length < 44) return null
+        val paddedLine1 = line1.padEnd(44, '<')
+        val paddedLine2 = line2.padEnd(44, '<')
+
+        if (paddedLine1.length != 44 || paddedLine2.length != 44) return null
         
         // Extract document type (position 1)
-        val documentType = line1.substring(0, 1)
+        val documentType = paddedLine1.substring(0, 1)
         
         // Extract country code (positions 2-4)
-        val countryCode = line1.substring(2, 5).trim()
+        val countryCode = paddedLine1.substring(2, 5).trim()
         
         // Extract name (positions 6-44)
-        val nameString = line1.substring(5, 44).trim()
+        val nameString = paddedLine1.substring(5, 44).trim()
         val names = parseNames(nameString)
         
         // Extract document number (positions 5-14)
-        val documentNumber = line2.substring(0, 9).trim()
-        val docNumCheckDigit = line2.substring(9, 10).toIntOrNull() ?: return null
+        val documentNumber = paddedLine2.substring(0, 9).trim()
+        val docNumCheckDigit = paddedLine2.substring(9, 10).toIntOrNull() ?: return null
         
         // Extract nationality (positions 15-17)
-        val nationality = line2.substring(10, 13).trim()
+        val nationality = paddedLine2.substring(10, 13).trim()
         
         // Extract date of birth (positions 18-25)
-        val dateOfBirth = line2.substring(13, 19)
-        val dobCheckDigit = line2.substring(19, 20).toIntOrNull() ?: return null
+        val dateOfBirth = paddedLine2.substring(13, 19)
+        val dobCheckDigit = paddedLine2.substring(19, 20).toIntOrNull() ?: return null
         
         // Extract sex (position 26)
-        val sex = line2.substring(20, 21)
+        val sex = paddedLine2.substring(20, 21)
         
         // Extract expiry date (positions 27-34)
-        val expiryDate = line2.substring(21, 27)
-        val expiryCheckDigit = line2.substring(27, 28).toIntOrNull() ?: return null
+        val expiryDate = paddedLine2.substring(21, 27)
+        val expiryCheckDigit = paddedLine2.substring(27, 28).toIntOrNull() ?: return null
         
         // Extract nationality (positions 29-42)
-        val personalNumber = line2.substring(28, 42).trim()
-        val personalNumCheckDigit = line2.substring(42, 43).toIntOrNull() ?: return null
+        val personalNumber = paddedLine2.substring(28, 42).trim()
+        val personalNumCheckDigit = paddedLine2.substring(42, 43).toIntOrNull() ?: return null
         
         // Validate checksums
         if (!validateChecksum(documentNumber, docNumCheckDigit) ||
@@ -83,43 +113,47 @@ object MRZParser {
             expiryDate = formatMRZDate(expiryDate),
             sex = sex,
             personalNumber = personalNumber,
-            mrzString = "$line1\n$line2"
+            mrzString = "$paddedLine1\n$paddedLine2"
         )
     }
     
     private fun parseTD1(line1: String, line2: String, line3: String): MRZData? {
-        if (line1.length < 30 || line2.length < 30 || line3.length < 30) return null
-        
+        val paddedLine1 = line1.padEnd(30, '<')
+        val paddedLine2 = line2.padEnd(30, '<')
+        val paddedLine3 = line3.padEnd(30, '<')
+
+        if (paddedLine1.length != 30 || paddedLine2.length != 30 || paddedLine3.length != 30) return null
+
         // Extract document type (positions 1-2)
-        val documentType = line1.substring(0, 2)
+        val documentType = paddedLine1.substring(0, 2)
         
         // Extract country code (positions 3-5)
-        val countryCode = line1.substring(2, 5).trim()
+        val countryCode = paddedLine1.substring(2, 5).trim()
         
         // Extract document number (positions 6-14)
-        val documentNumber = line1.substring(5, 14).trim()
-        val docNumCheckDigit = line1.substring(14, 15).toIntOrNull() ?: return null
+        val documentNumber = paddedLine1.substring(5, 14).trim()
+        val docNumCheckDigit = paddedLine1.substring(14, 15).toIntOrNull() ?: return null
         
         // Extract personal number (positions 16-29)
-        val personalNumber = line1.substring(15, 29).trim()
-        val personalNumCheckDigit = line1.substring(29, 30).toIntOrNull() ?: return null
+        val personalNumber = paddedLine1.substring(15, 29).trim()
+        val personalNumCheckDigit = paddedLine1.substring(29, 30).toIntOrNull() ?: return null
         
         // Extract date of birth (positions 1-7)
-        val dateOfBirth = line2.substring(0, 6)
-        val dobCheckDigit = line2.substring(6, 7).toIntOrNull() ?: return null
+        val dateOfBirth = paddedLine2.substring(0, 6)
+        val dobCheckDigit = paddedLine2.substring(6, 7).toIntOrNull() ?: return null
         
         // Extract sex (position 8)
-        val sex = line2.substring(7, 8)
+        val sex = paddedLine2.substring(7, 8)
         
         // Extract expiry date (positions 9-15)
-        val expiryDate = line2.substring(8, 14)
-        val expiryCheckDigit = line2.substring(14, 15).toIntOrNull() ?: return null
+        val expiryDate = paddedLine2.substring(8, 14)
+        val expiryCheckDigit = paddedLine2.substring(14, 15).toIntOrNull() ?: return null
         
         // Extract nationality (positions 16-18)
-        val nationality = line2.substring(15, 18).trim()
+        val nationality = paddedLine2.substring(15, 18).trim()
         
         // Extract name (positions 6-30)
-        val nameString = line3.trim()
+        val nameString = paddedLine3.trim()
         val names = parseNames(nameString)
         
         // Validate checksums
@@ -141,7 +175,7 @@ object MRZParser {
             expiryDate = formatMRZDate(expiryDate),
             sex = sex,
             personalNumber = personalNumber,
-            mrzString = "$line1\n$line2\n$line3"
+            mrzString = "$paddedLine1\n$paddedLine2\n$paddedLine3"
         )
     }
     
@@ -157,18 +191,19 @@ object MRZParser {
     }
     
     /**
-     * Normalizes MRZ string by replacing common OCR errors
+     * Normalizes MRZ string by replacing common OCR errors and removing all whitespace.
      */
     fun normalizeMRZ(input: String): String {
         return input
             .uppercase()
-            .replace(" ", "")
-            // Частые OCR-подмены (буквы → цифры)
+            .replace(Regex("\\s"), "") // Remove all whitespace characters
+            // Common OCR substitutions (letters to numbers)
             .replace("O", "0")
             .replace("I", "1")
             .replace("S", "5")
             .replace("B", "8")
     }
+
     /**
      * Validates a checksum according to ICAO 9303 standards
      */

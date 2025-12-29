@@ -11,9 +11,9 @@ import com.example.emrtdreader.error.PassportReadException
 import com.example.emrtdreader.model.PassportData
 import net.sf.scuba.smartcards.IsoDepCardService
 import org.jmrtd.PassportService
-import org.jmrtd.lds.DG1File
-import org.jmrtd.lds.DG2File
 import org.jmrtd.lds.SODFile
+import org.jmrtd.lds.icao.DG1File
+import org.jmrtd.lds.icao.DG2File
 import org.jmrtd.lds.iso19794.FaceInfo
 import java.io.ByteArrayInputStream
 
@@ -79,7 +79,7 @@ class NfcPassportReader {
                 givenNames = mrzInfo.secondaryIdentifier ?: "",
                 nationality = mrzInfo.nationality ?: "",
                 dateOfBirth = mrzInfo.dateOfBirth ?: "",
-                sex = mrzInfo.sex?.toString().orEmpty(),
+                sex = mrzInfo.gender?.toString().orEmpty(),
                 dateOfExpiry = mrzInfo.dateOfExpiry ?: "",
                 personalNumber = mrzInfo.personalNumber ?: "",
                 personalNumber2 = "",
@@ -113,11 +113,11 @@ class NfcPassportReader {
             val faceInfos = dg2.faceInfos ?: return null
             if (faceInfos.isEmpty()) return null
 
-            val faceInfo = faceInfos[0] as? FaceInfo ?: return null
+            val faceInfo = faceInfos.first() as? FaceInfo ?: return null
             val imgInfos = faceInfo.faceImageInfos ?: return null
             if (imgInfos.isEmpty()) return null
 
-            imgInfos[0].imageInputStream.use { it.readBytes() }
+            imgInfos.first().imageInputStream.use { it.readBytes() }
         }.getOrNull()
     }
 

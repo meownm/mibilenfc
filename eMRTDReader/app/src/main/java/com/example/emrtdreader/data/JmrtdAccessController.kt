@@ -16,7 +16,7 @@ class JmrtdAccessController(
     fun establish(mrz: AccessKey.Mrz, can: String?) {
         // PACE можно реализовать через EF.CardAccess (PACEInfo) + service.doPACE(...)
         // Сейчас делаем максимально совместимый BAC.
-        val bacKey = BACKey(mrz.documentNumber, mrz.dateOfBirth, mrz.dateOfExpiry)
+        val bacKey = BACKey(mrz.documentNumber, mrz.dateOfBirthYYMMDD, mrz.dateOfExpiryYYMMDD)
         service.doBAC(bacKey)
     }
 }
