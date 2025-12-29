@@ -159,15 +159,16 @@ object MRZParser {
     /**
      * Normalizes MRZ string by replacing common OCR errors
      */
-    private fun normalizeMRZ(mrz: String): String {
-        return mrz
-            .uppercase(Locale.getDefault())
-            .replace("0", "O")
-            .replace("1", "I")
-            .replace("5", "S")
-            .replace("8", "B")
+    fun normalizeMRZ(input: String): String {
+        return input
+            .uppercase()
+            .replace(" ", "")
+            // Частые OCR-подмены (буквы → цифры)
+            .replace("O", "0")
+            .replace("I", "1")
+            .replace("S", "5")
+            .replace("B", "8")
     }
-    
     /**
      * Validates a checksum according to ICAO 9303 standards
      */
