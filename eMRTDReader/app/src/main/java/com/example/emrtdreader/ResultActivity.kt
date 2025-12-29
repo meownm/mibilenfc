@@ -1,6 +1,7 @@
 package com.example.emrtdreader
 
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.TextView
@@ -24,7 +25,12 @@ class ResultActivity : AppCompatActivity() {
         val personalNumberTextView: TextView = findViewById(R.id.personalNumberTextView)
         val mrzDataTextView: TextView = findViewById(R.id.mrzDataTextView)
 
-        val passportData = intent.getSerializableExtra("PASSPORT_DATA") as? PassportData
+        val passportData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getSerializableExtra("PASSPORT_DATA", PassportData::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getSerializableExtra("PASSPORT_DATA") as? PassportData
+        }
         val json = intent.getStringExtra("PASSPORT_JSON").orEmpty()
         val auth = intent.getStringExtra("AUTH_RESULT").orEmpty()
 

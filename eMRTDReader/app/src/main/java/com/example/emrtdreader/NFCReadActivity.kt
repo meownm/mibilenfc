@@ -18,7 +18,10 @@ import java.util.concurrent.Executors
 class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     companion object {
-        const val EXTRA_MRZ = "MRZ_DATA"
+        const val EXTRA_MRZ_STRING = "EXTRA_MRZ_STRING"
+        const val EXTRA_DOC_NUM = "EXTRA_DOC_NUM"
+        const val EXTRA_DOB = "EXTRA_DOB" // YYMMDD
+        const val EXTRA_DOE = "EXTRA_DOE" // YYMMDD
     }
 
     private lateinit var instructionTextView: TextView
@@ -32,8 +35,7 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     private val executor = Executors.newSingleThreadExecutor()
     private val reader = NfcPassportReader()
 
-    private var mrzRaw: String? = null
-    private var mrzKey: AccessKey.Mrz? = null
+    private var accessKey: AccessKey.Mrz? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,12 +50,22 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
 
-        mrzRaw = intent.getStringExtra(EXTRA_MRZ)
-        mrzKey = parseMrz(mrzRaw)
+        // Determine which data was passed and create the access key
+        val mrzString = intent.getStringExtra(EXTRA_MRZ_STRING)
+        if (mrzString != null) {
+            accessKey = parseMrz(mrzString)
+        } else {
+            val docNum = intent.getStringExtra(EXTRA_DOC_NUM)
+            val dob = intent.getStringExtra(EXTRA_DOB)
+            val doe = intent.getStringExtra(EXTRA_DOE)
+            if (docNum != null && dob != null && doe != null) {
+                accessKey = AccessKey.Mrz(docNum, dob, doe)
+            }
+        }
 
         readNfcButton.setOnClickListener {
-            if (mrzKey == null) {
-                setError("MRZ invalid. Go back and rescan.")
+            if (accessKey == null) {
+                setError("Access key is invalid. Go back and try again.")
                 return@setOnClickListener
             }
             enableReaderMode()
@@ -101,7 +113,7 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     }
 
     override fun onTagDiscovered(tag: Tag) {
-        val mrz = mrzKey ?: return
+        val key = accessKey ?: return
         val can = canEditText.text?.toString()?.trim().orEmpty()
 
         runOnUiThread {
@@ -111,7 +123,7 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
         executor.execute {
             try {
-                val result = reader.read(tag, mrz, can.ifBlank { null })
+                val result = reader.read(tag, key, can.ifBlank { null })
                 runOnUiThread {
                     disableReaderMode()
                     openResult(result.passportData, result.json, result.authResult.name)
@@ -141,8 +153,7 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     private fun parseMrz(raw: String?): AccessKey.Mrz? {
         if (raw.isNullOrBlank()) return null
-        val mrz = MRZParser.normalizeMRZ(raw)
-        val parsed = MRZParser.parseMRZ(mrz) ?: return null
+        val parsed = MRZParser.parseMRZ(raw) ?: return null
         return AccessKey.Mrz(
             documentNumber = parsed.documentNumber,
             dateOfBirthYYMMDD = parsed.dateOfBirth,
@@ -151,10 +162,10 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     }
 
     private fun updateUiReady() {
-        if (mrzKey == null) {
-            instructionTextView.text = "MRZ not available"
+        if (accessKey == null) {
+            instructionTextView.text = "Access key not available"
             progressTextView.text = ""
-            statusTextView.text = "Go back and scan MRZ first."
+            statusTextView.text = "Go back and scan or enter data first."
             readNfcButton.isEnabled = false
             return
         }
