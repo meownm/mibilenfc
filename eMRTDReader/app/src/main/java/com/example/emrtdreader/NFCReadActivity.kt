@@ -9,11 +9,12 @@ import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.example.emrtdreader.data.NfcPassportReader
 import com.example.emrtdreader.domain.AccessKey
 import com.example.emrtdreader.error.PassportReadException
 import com.example.emrtdreader.utils.MRZParser
-import java.util.concurrent.Executors
+import kotlinx.coroutines.launch
 
 class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
@@ -32,7 +33,6 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
     private lateinit var readNfcButton: Button
 
     private var nfcAdapter: NfcAdapter? = null
-    private val executor = Executors.newSingleThreadExecutor()
     private val reader = NfcPassportReader()
 
     private var accessKey: AccessKey.Mrz? = null
@@ -50,7 +50,6 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
 
-        // Determine which data was passed and create the access key
         val mrzString = intent.getStringExtra(EXTRA_MRZ_STRING)
         if (mrzString != null) {
             accessKey = parseMrz(mrzString)
@@ -76,7 +75,6 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     override fun onResume() {
         super.onResume()
-        // Do not auto-enable to avoid unexpected reads; user presses button.
     }
 
     override fun onPause() {
@@ -99,10 +97,7 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         statusTextView.text = ""
         instructionTextView.text = "Hold your passport to the NFC area"
 
-        val flags = NfcAdapter.FLAG_READER_NFC_A or
-                NfcAdapter.FLAG_READER_NFC_B or
-                NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
-
+        val flags = NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
         adapter.enableReaderMode(this, this, flags, null)
         readNfcButton.isEnabled = false
     }
@@ -114,16 +109,15 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
 
     override fun onTagDiscovered(tag: Tag) {
         val key = accessKey ?: return
-        val can = canEditText.text?.toString()?.trim().orEmpty()
 
         runOnUiThread {
             progressTextView.text = "Reading passport..."
             statusTextView.text = ""
         }
 
-        executor.execute {
+        lifecycleScope.launch {
             try {
-                val result = reader.read(tag, key, can.ifBlank { null })
+                val result = reader.read(tag, key)
                 runOnUiThread {
                     disableReaderMode()
                     openResult(result.passportData, result.json, result.authResult.name)
@@ -142,23 +136,21 @@ class NFCReadActivity : AppCompatActivity(), NfcAdapter.ReaderCallback {
         }
     }
 
-    private fun openResult(passportData: com.example.emrtdreader.model.PassportData, json: String?, auth: String) {
-        val intent = Intent(this, ResultActivity::class.java)
-        intent.putExtra("PASSPORT_DATA", passportData)
-        intent.putExtra("PASSPORT_JSON", json)
-        intent.putExtra("AUTH_RESULT", auth)
+    private fun openResult(passportData: com.example.emrtdreader.domain.PassportData, json: String?, auth: String) {
+        val intent = Intent(this, ResultActivity::class.java).apply {
+            putExtra("PASSPORT_DATA", passportData)
+            putExtra("PASSPORT_JSON", json)
+            putExtra("AUTH_RESULT", auth)
+        }
         startActivity(intent)
         finish()
     }
 
     private fun parseMrz(raw: String?): AccessKey.Mrz? {
         if (raw.isNullOrBlank()) return null
-        val parsed = MRZParser.parseMRZ(raw) ?: return null
-        return AccessKey.Mrz(
-            documentNumber = parsed.documentNumber,
-            dateOfBirthYYMMDD = parsed.dateOfBirth,
-            dateOfExpiryYYMMDD = parsed.expiryDate
-        )
+        // This needs a full MRZ parser, which is not available in MrzNormalizer
+        // This part needs to be re-implemented
+        return null
     }
 
     private fun updateUiReady() {

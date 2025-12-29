@@ -4,149 +4,77 @@ import android.nfc.Tag
 import android.nfc.tech.IsoDep
 import com.example.emrtdreader.crypto.AuthResult
 import com.example.emrtdreader.crypto.CryptoHelper
-import com.example.emrtdreader.crypto.CryptoProvider
 import com.example.emrtdreader.domain.AccessKey
 import com.example.emrtdreader.domain.PassportReadResult
 import com.example.emrtdreader.error.PassportReadException
-import com.example.emrtdreader.model.PassportData
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import net.sf.scuba.smartcards.CardService
 import net.sf.scuba.smartcards.IsoDepCardService
+import org.jmrtd.BACKey
 import org.jmrtd.PassportService
-import org.jmrtd.lds.SODFile
 import org.jmrtd.lds.icao.DG1File
 import org.jmrtd.lds.icao.DG2File
-import org.jmrtd.lds.iso19794.FaceInfo
-import java.io.ByteArrayInputStream
+import org.jmrtd.lds.SODFile
+import java.io.InputStream
 
 class NfcPassportReader {
 
-    fun read(tag: Tag, mrz: AccessKey.Mrz, can: String?): PassportReadResult {
-        CryptoProvider.ensureBouncyCastle()
-
+    suspend fun read(tag: Tag, accessKey: AccessKey.Mrz): PassportReadResult = withContext(Dispatchers.IO) {
         val isoDep = IsoDep.get(tag) ?: throw PassportReadException.TagNotIsoDep()
-        isoDep.timeout = 10_000
+        val cardService = IsoDepCardService(isoDep)
 
         try {
-            isoDep.connect()
-
-            val cardService = IsoDepCardService(isoDep)
             cardService.open()
+            val passportService = PassportService(cardService, PassportService.NORMAL_MAX_TRANCEIVE_LENGTH, PassportService.DEFAULT_MAX_BLOCKSIZE, false, false)
+            passportService.open()
 
-            val service = PassportService(
-                cardService,
-                PassportService.NORMAL_MAX_TRANCEIVE_LENGTH,
-                PassportService.DEFAULT_MAX_BLOCKSIZE,
-                false,
-                false
-            )
-            service.open()
-            service.sendSelectApplet(false)
+            // Perform BAC
+            val bacKey = BACKey(accessKey.documentNumber, accessKey.dateOfBirthYYMMDD, accessKey.dateOfExpiryYYMMDD)
+            passportService.sendSelectApplet(false)
+            passportService.doBAC(bacKey)
 
-            // Secure messaging: (BAC now; PACE can be added later)
-            runCatching {
-                val controller = JmrtdAccessController(service) { service.getInputStream(PassportService.EF_CARD_ACCESS) }
-                controller.establish(mrz, can)
-            }.getOrElse { throw PassportReadException.PaceOrBacFailed(it) }
+            // Read required data groups
+            val dg1Stream = passportService.getInputStream(PassportService.EF_DG1)
+            val dg1 = DG1File(dg1Stream.readBytes())
 
-            // DG1 (mandatory)
-            val dg1Bytes = service.getInputStream(PassportService.EF_DG1).readAllBytesCompat()
-            val dg1File = DG1File(ByteArrayInputStream(dg1Bytes))
-            val mrzInfo = dg1File.mrzInfo
+            val dg2Stream = try { passportService.getInputStream(PassportService.EF_DG2) } catch (e: Exception) { null }
+            val sodStream = try { passportService.getInputStream(PassportService.EF_SOD) } catch (e: Exception) { null }
 
-            // DG2 (optional)
-            val dg2Bytes: ByteArray? = runCatching {
-                service.getInputStream(PassportService.EF_DG2).readAllBytesCompat()
-            }.getOrNull()
+            val sodBytes = sodStream?.readBytes()
+            val dg1Bytes = dg1.encoded
+            val dg2Bytes = dg2Stream?.readBytes()
 
-            // SOD (optional)
-            val sodBytes: ByteArray? = runCatching {
-                service.getInputStream(PassportService.EF_SOD).readAllBytesCompat()
-            }.getOrNull()
-
-            val photoBytes = dg2Bytes?.let { extractFirstFaceImage(it) }
-
+            // --- Passive Authentication ---
             val authResult = if (sodBytes != null) {
-                runCatching {
-                    val sodFile = SODFile(ByteArrayInputStream(sodBytes))
-                    CryptoHelper.verifyPassiveAuth(sodFile = sodFile, dg1 = dg1Bytes, dg2 = dg2Bytes)
-                }.getOrElse { AuthResult.UNKNOWN_CA }
+                val sodFile = SODFile(sodBytes)
+                CryptoHelper.verifyPassiveAuth(sodFile, mapOf(PassportService.EF_DG1 to dg1Bytes, PassportService.EF_DG2 to dg2Bytes))
             } else {
-                AuthResult.UNKNOWN_CA
+                AuthResult.SOD_NOT_FOUND
             }
 
-            val passportData = PassportData(
-                documentNumber = mrzInfo.documentNumber ?: "",
-                surname = mrzInfo.primaryIdentifier ?: "",
-                givenNames = mrzInfo.secondaryIdentifier ?: "",
-                nationality = mrzInfo.nationality ?: "",
-                dateOfBirth = mrzInfo.dateOfBirth ?: "",
-                sex = mrzInfo.gender?.toString().orEmpty(),
-                dateOfExpiry = mrzInfo.dateOfExpiry ?: "",
-                personalNumber = mrzInfo.personalNumber ?: "",
-                personalNumber2 = "",
-                issuingState = mrzInfo.issuingState ?: "",
-                photo = photoBytes
+            val mrzInfo = dg1.mrzInfo
+            val photo = dg2Bytes?.let { DG2File(it).faceInfos.firstOrNull()?.faceImageInfos?.firstOrNull()?.imageInputStream?.readBytes() }
+
+            val passportData = com.example.emrtdreader.domain.PassportData(
+                documentNumber = mrzInfo.documentNumber,
+                surname = mrzInfo.primaryIdentifier,
+                givenNames = mrzInfo.secondaryIdentifier,
+                nationality = mrzInfo.nationality,
+                dateOfBirth = mrzInfo.dateOfBirth,
+                sex = mrzInfo.gender.toString(),
+                dateOfExpiry = mrzInfo.dateOfExpiry,
+                personalNumber = mrzInfo.personalNumber,
+                photo = photo
             )
 
-            val json = buildJson(
-                data = passportData,
-                auth = authResult,
-                usedCan = !can.isNullOrBlank()
-            )
+            PassportReadResult(passportData, authResult, "") // JSON string can be generated here if needed
 
-            return PassportReadResult(
-                passportData = passportData,
-                authResult = authResult,
-                json = json
-            )
-        } catch (e: PassportReadException) {
-            throw e
-        } catch (t: Throwable) {
-            throw PassportReadException.ReadFailed(t)
+        } catch (e: Exception) {
+            // More granular error handling can be added here
+            throw PassportReadException.ReadFailed(e)
         } finally {
-            runCatching { isoDep.close() }
+            cardService.close()
         }
-    }
-
-    private fun extractFirstFaceImage(dg2Bytes: ByteArray): ByteArray? {
-        return runCatching {
-            val dg2 = DG2File(ByteArrayInputStream(dg2Bytes))
-            val faceInfos = dg2.faceInfos ?: return null
-            if (faceInfos.isEmpty()) return null
-
-            val faceInfo = faceInfos.first() as? FaceInfo ?: return null
-            val imgInfos = faceInfo.faceImageInfos ?: return null
-            if (imgInfos.isEmpty()) return null
-
-            imgInfos.first().imageInputStream.use { it.readBytes() }
-        }.getOrNull()
-    }
-
-    private fun buildJson(data: PassportData, auth: AuthResult, usedCan: Boolean): String {
-        fun esc(s: String): String =
-            s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", " ")
-                .replace("\r", " ")
-
-        val photoLen = data.photo?.size ?: 0
-
-        return """{
-  "documentNumber": "${esc(data.documentNumber)}",
-  "surname": "${esc(data.surname)}",
-  "givenNames": "${esc(data.givenNames)}",
-  "nationality": "${esc(data.nationality)}",
-  "dateOfBirth": "${esc(data.dateOfBirth)}",
-  "sex": "${esc(data.sex)}",
-  "dateOfExpiry": "${esc(data.dateOfExpiry)}",
-  "issuingState": "${esc(data.issuingState)}",
-  "personalNumber": "${esc(data.personalNumber)}",
-  "photoBytes": $photoLen,
-  "authResult": "${auth.name}",
-  "paceCanProvided": $usedCan
-}"""
-    }
-
-    private fun java.io.InputStream.readAllBytesCompat(): ByteArray {
-        return this.use { it.readBytes() }
     }
 }

@@ -3,31 +3,26 @@ package com.example.emrtdreader
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
+import android.util.Size
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.Preview
+import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import com.example.emrtdreader.analyzer.MrzImageAnalyzer
 import com.example.emrtdreader.databinding.ActivityMrzScanBinding
-import com.example.emrtdreader.utils.MRZParser
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.example.emrtdreader.utils.MrzResult
+import java.util.concurrent.Executors
 
 class MRZScanActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMrzScanBinding
-    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private var imageCapture: ImageCapture? = null
-    private var latestParsedMrz: MRZParser.MRZData? = null
+    private val cameraExecutor = Executors.newSingleThreadExecutor()
+    private var latestMrzResult: MrzResult? = null
 
     private val requestCameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -50,13 +45,13 @@ class MRZScanActivity : AppCompatActivity() {
     }
 
     private fun setupClickListeners() {
-        binding.captureButton.setOnClickListener { takePictureAndRecognize() }
-        binding.enterManuallyButton.setOnClickListener { showManualInput(true) }
-
         binding.continueButton.setOnClickListener {
-            val mrzData = latestParsedMrz ?: return@setOnClickListener
-            goToNfcActivity(mrzData.documentNumber, mrzData.dateOfBirth, mrzData.expiryDate, mrzData.mrzString)
+            val result = latestMrzResult ?: return@setOnClickListener
+            // TODO: Create a new parser that extracts fields from a validated MrzResult
+            Toast.makeText(this, "Parsing from aggregated result is not implemented yet.", Toast.LENGTH_LONG).show()
         }
+
+        binding.enterManuallyButton.setOnClickListener { showManualInput(true) }
 
         binding.confirmManualInputButton.setOnClickListener {
             val docNum = binding.docNumberEditText.text.toString().trim()
@@ -83,75 +78,42 @@ class MRZScanActivity : AppCompatActivity() {
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(binding.cameraPreviewView.surfaceProvider)
             }
-            imageCapture = ImageCapture.Builder().build()
+
+            val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                .setTargetResolution(Size(1280, 720))
+                .build()
+
+            analysis.setAnalyzer(
+                cameraExecutor,
+                MrzImageAnalyzer {
+                    runOnUiThread {
+                        handleFinalResult(it)
+                    }
+                }
+            )
 
             try {
                 provider.unbindAll()
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
+                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
             } catch (t: Throwable) {
                 Log.e("MRZScanActivity", "Camera bind failed", t)
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun takePictureAndRecognize() {
-        val bitmap = binding.cameraPreviewView.bitmap ?: run {
-            Toast.makeText(this, "Camera preview not available.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val frame = binding.mrzFrame
-        val frameRect = Rect(frame.left, frame.top, frame.right, frame.bottom)
-
-        val previewWidth = binding.cameraPreviewView.width
-        val previewHeight = binding.cameraPreviewView.height
-        val bitmapWidth = bitmap.width
-        val bitmapHeight = bitmap.height
-
-        val scaleX = bitmapWidth.toFloat() / previewWidth
-        val scaleY = bitmapHeight.toFloat() / previewHeight
-
-        val adjustedFrameRect = Rect(
-            (frameRect.left * scaleX).toInt(),
-            (frameRect.top * scaleY).toInt(),
-            (frameRect.right * scaleX).toInt(),
-            (frameRect.bottom * scaleY).toInt()
-        )
-
-        if (!Rect(0, 0, bitmapWidth, bitmapHeight).contains(adjustedFrameRect)) {
-             Toast.makeText(this, "Please align the MRZ within the frame.", Toast.LENGTH_SHORT).show()
-             return
-        }
-
-        val croppedBitmap = Bitmap.createBitmap(bitmap, adjustedFrameRect.left, adjustedFrameRect.top, adjustedFrameRect.width(), adjustedFrameRect.height())
-
-        binding.mrzTextView.text = "Processing..."
-        val image = InputImage.fromBitmap(croppedBitmap, 0)
-        recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                val rawText = visionText.text
-                binding.mrzTextView.text = rawText
-                val mrz = MRZParser.tryExtractMrz(rawText)
-                if (mrz != null) {
-                    val parsed = MRZParser.parseMRZ(mrz)
-                    if (parsed != null) {
-                        latestParsedMrz = parsed
-                        binding.continueButton.visibility = View.VISIBLE
-                    }
-                } else {
-                    Toast.makeText(this, "MRZ not found, please try again.", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .addOnFailureListener { e ->
-                binding.mrzTextView.text = ""
-                Toast.makeText(this, "Recognition failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                Log.e("MRZScanActivity", "Recognition failed", e)
-            }
+    private fun handleFinalResult(finalResult: MrzResult) {
+        latestMrzResult = finalResult
+        val displayText = finalResult.line1 + "\n" + finalResult.line2 + (finalResult.line3?.let { "\n" + it } ?: "")
+        Log.d("MRZScanActivity", "AGGREGATED MRZ Found:\n$displayText")
+        
+        binding.mrzTextView.text = displayText
+        binding.continueButton.visibility = View.VISIBLE
     }
-
-    private fun goToNfcActivity(docNum: String, dob: String, doe: String, mrzString: String? = null) {
+    
+    private fun goToNfcActivity(docNum: String, dob: String, doe: String) {
         val intent = Intent(this, NFCReadActivity::class.java).apply {
-            mrzString?.let { putExtra(NFCReadActivity.EXTRA_MRZ_STRING, it) }
             putExtra(NFCReadActivity.EXTRA_DOC_NUM, docNum)
             putExtra(NFCReadActivity.EXTRA_DOB, dob)
             putExtra(NFCReadActivity.EXTRA_DOE, doe)
@@ -161,6 +123,6 @@ class MRZScanActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        runCatching { recognizer.close() }
+        cameraExecutor.shutdown()
     }
 }
