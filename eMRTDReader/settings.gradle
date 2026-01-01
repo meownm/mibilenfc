@@ -4,17 +4,18 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    plugins {
+        id("com.android.application") version "8.2.2"
+        id("com.android.library") version "8.2.2"
+    }
 }
-
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
-        // Add JitPack for any potential future libraries like Tess-Two
-        maven { url 'https://jitpack.io' }
     }
 }
-
 rootProject.name = "eMRTDReader"
 include(":app")
+include(":sdk")

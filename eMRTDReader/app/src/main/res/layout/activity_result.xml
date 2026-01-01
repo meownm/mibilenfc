@@ -1,184 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    tools:context=".ResultActivity">
+    android:layout_height="match_parent">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingBottom="16dp">
+  <LinearLayout
+      android:orientation="vertical"
+      android:padding="16dp"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content">
 
-        <TextView
-            android:id="@+id/titleTextView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/result_title"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+      <TextView
+          android:id="@+id/titleTextView"
+          android:text="Result"
+          android:textStyle="bold"
+          android:textSize="20sp"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"/>
 
-        <ImageView
-            android:id="@+id/photoImageView"
-            android:layout_width="120dp"
-            android:layout_height="160dp"
-            android:layout_marginTop="24dp"
-            android:scaleType="centerCrop"
-            android:background="@drawable/photo_placeholder"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/titleTextView" />
+      <ImageView
+          android:id="@+id/photoImageView"
+          android:layout_marginTop="12dp"
+          android:layout_width="160dp"
+          android:layout_height="200dp"
+          android:scaleType="centerCrop" />
 
-        <TextView
-            android:id="@+id/verificationStatusTextView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/signature_valid"
-            android:textColor="@color/green"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/photoImageView" />
+      <TextView
+          android:id="@+id/dataTextView"
+          android:layout_marginTop="12dp"
+          android:textIsSelectable="true"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content" />
 
-        <TextView
-            android:id="@+id/passportDataTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/passport_data"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="@+id/dataContainer"
-            app:layout_constraintTop_toBottomOf="@+id/verificationStatusTextView" />
-
-        <LinearLayout
-            android:id="@+id/dataContainer"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginHorizontal="16dp"
-            android:orientation="vertical"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/passportDataTitle">
-
-            <TextView
-                android:id="@+id/nameLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/name"
-                android:textStyle="bold"
-                android:paddingVertical="4dp" />
-
-            <TextView
-                android:id="@+id/nameTextView"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingBottom="8dp" />
-
-            <TextView
-                android:id="@+id/passportNumberLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/passport_number"
-                android:textStyle="bold"
-                android:paddingVertical="4dp" />
-
-            <TextView
-                android:id="@+id/passportNumberTextView"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingBottom="8dp" />
-
-            <TextView
-                android:id="@+id/nationalityLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/nationality"
-                android:textStyle="bold"
-                android:paddingVertical="4dp" />
-
-            <TextView
-                android:id="@+id/nationalityTextView"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingBottom="8dp" />
-
-            <TextView
-                android:id="@+id/dateOfBirthLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/date_of_birth"
-                android:textStyle="bold"
-                android:paddingVertical="4dp" />
-
-            <TextView
-                android:id="@+id/dateOfBirthTextView"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingBottom="8dp" />
-
-            <TextView
-                android:id="@+id/expiryDateLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/expiry_date"
-                android:textStyle="bold"
-                android:paddingVertical="4dp" />
-
-            <TextView
-                android:id="@+id/expiryDateTextView"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingBottom="8dp" />
-
-            <TextView
-                android:id="@+id/personalNumberLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/personal_number"
-                android:textStyle="bold"
-                android:paddingVertical="4dp" />
-
-            <TextView
-                android:id="@+id/personalNumberTextView"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingBottom="8dp" />
-
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/mrzDataLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/mrz_data"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="@+id/mrzDataTextView"
-            app:layout_constraintTop_toBottomOf="@+id/dataContainer" />
-
-        <TextView
-            android:id="@+id/mrzDataTextView"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:layout_marginHorizontal="16dp"
-            android:background="#10000000"
-            android:padding="12dp"
-            android:textSize="12sp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/mrzDataLabel" />
-
-    </androidx.constraintlayout.widget.ConstraintLayout>
-
+      <TextView
+          android:id="@+id/verificationStatusTextView"
+          android:layout_marginTop="12dp"
+          android:textIsSelectable="true"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content" />
+  </LinearLayout>
 </ScrollView>
