@@ -1,7 +1,8 @@
 # Build & Gradle DSL
 
 This project uses the **Groovy DSL** (`*.gradle`) exclusively. Do not introduce Kotlin DSL
-syntax in Gradle files.
+syntax in Gradle files. The root project is **not** an Android project and only declares
+Android Gradle Plugin versions in `build.gradle`.
 
 The Android Gradle Plugin (AGP) version is configured in `settings.gradle` under
 `pluginManagement.plugins`, and repository declarations are restricted to
@@ -32,16 +33,6 @@ include ':app', ':sdk'
 ```
 
 ## Validation
-Run the Gradle sync configuration checks (positive + negative checks):
-```bash
-./gradlew verifyGradleSyncConfig
-```
-
-Run the DSL validation task (positive + negative checks):
-```bash
-./gradlew verifyGradleDsl
-```
-
 Run the namespace checks to ensure distinct module namespaces and SDK packages:
 ```bash
 ./gradlew verifyModuleNamespaces
@@ -61,7 +52,7 @@ Run the integration/unit test suite for the SDK:
 ./gradlew :sdk:testDebugUnitTest
 ```
 
-Run the app + SDK integration build:
+Run the root checks and integration builds (positive + negative coverage):
 ```bash
-./gradlew verifyAppSdkIntegration
+./scripts/tests/gradle_checks.sh
 ```
