@@ -1,13 +1,3 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath "com.android.tools.build:gradle:8.3.2"
-    }
-}
-
 /* Groovy way */
 task clean(type: Delete) {
     delete rootProject.buildDir
@@ -58,6 +48,42 @@ tasks.register("verifyGradleDsl") {
 
         if (!violations.isEmpty()) {
             throw new GradleException("Gradle DSL verification failed:\\n - " + violations.join("\\n - "))
+        }
+    }
+}
+
+tasks.register("verifyGradleSyncConfig") {
+    group = "verification"
+    description = "Verifies Gradle sync configuration and repository placement."
+
+    doLast {
+        def violations = []
+        def settingsFile = file("settings.gradle")
+        def settingsText = settingsFile.getText("UTF-8")
+
+        if (!(settingsText =~ /id\s+"com\.android\.application"\s+version\s+"[^"]+"/)) {
+            violations << "${settingsFile}: missing AGP version for com.android.application in pluginManagement.plugins"
+        }
+        if (!(settingsText =~ /id\s+"com\.android\.library"\s+version\s+"[^"]+"/)) {
+            violations << "${settingsFile}: missing AGP version for com.android.library in pluginManagement.plugins"
+        }
+
+        fileTree(rootDir) {
+            include "**/*.gradle"
+            exclude "settings.gradle"
+            exclude "**/build/**"
+        }.each { gradleFile ->
+            def text = gradleFile.getText("UTF-8")
+            if (text =~ /buildscript\s*\{/) {
+                violations << "${gradleFile}: buildscript blocks are not allowed outside settings.gradle"
+            }
+            if (text =~ /repositories\s*\{/) {
+                violations << "${gradleFile}: repositories are only allowed in settings.gradle"
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            throw new GradleException("Gradle sync configuration verification failed:\\n - " + violations.join("\\n - "))
         }
     }
 }

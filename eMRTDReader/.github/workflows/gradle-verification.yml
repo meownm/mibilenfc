@@ -25,6 +25,12 @@ jobs:
       - name: Verify Groovy DSL
         run: ./gradlew verifyGradleDsl
 
+      - name: Verify Gradle sync configuration
+        run: ./gradlew verifyGradleSyncConfig
+
+      - name: Gradle sync (configuration)
+        run: ./gradlew help
+
       - name: Verify SDK dependency resolution
         run: ./gradlew :sdk:verifySdkDependencies
 
