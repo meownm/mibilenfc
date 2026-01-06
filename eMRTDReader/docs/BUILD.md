@@ -3,6 +3,10 @@
 This project uses the **Groovy DSL** (`*.gradle`) exclusively. Do not introduce Kotlin DSL
 syntax in Gradle files.
 
+The Android Gradle Plugin (AGP) version is configured in `settings.gradle` under
+`pluginManagement.plugins`, and repository declarations are restricted to
+`settings.gradle` (`pluginManagement.repositories` and `dependencyResolutionManagement.repositories`).
+
 ## Build
 ```bash
 ./gradlew assembleRelease
@@ -28,6 +32,11 @@ include ':app', ':sdk'
 ```
 
 ## Validation
+Run the Gradle sync configuration checks (positive + negative checks):
+```bash
+./gradlew verifyGradleSyncConfig
+```
+
 Run the DSL validation task (positive + negative checks):
 ```bash
 ./gradlew verifyGradleDsl

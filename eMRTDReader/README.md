@@ -47,7 +47,8 @@ Run the SDK unit test suite (includes MRZ parsing coverage):
 .\gradlew :sdk:testDebugUnitTest
 ```
 
-Validate the Groovy DSL configuration:
+Validate the Gradle sync configuration and Groovy DSL checks:
 ```powershell
+.\gradlew verifyGradleSyncConfig
 .\gradlew verifyGradleDsl
 ```
