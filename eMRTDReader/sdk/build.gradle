@@ -23,6 +23,15 @@ android {
     }
 }
 
+configurations.configureEach {
+    exclude group: "org.bouncycastle", module: "bcprov-jdk18on"
+    exclude group: "org.bouncycastle", module: "bcpkix-jdk18on"
+    exclude group: "org.bouncycastle", module: "bcutil-jdk18on"
+    exclude group: "org.bouncycastle", module: "bcprov-jdk15on"
+    exclude group: "org.bouncycastle", module: "bcpkix-jdk15on"
+    exclude group: "org.bouncycastle", module: "bcutil-jdk15on"
+}
+
 dependencies {
 
     /* =========================
@@ -62,11 +71,79 @@ dependencies {
     /* =========================
        BouncyCastle (ANDROID SAFE)
        ========================= */
-    implementation 'org.bouncycastle:bcprov-jdk15to18:1.70'
-    implementation 'org.bouncycastle:bcutil-jdk15to18:1.70'
-    implementation 'org.bouncycastle:bcpkix-jdk15to18:1.70'
+    implementation 'org.bouncycastle:bcprov-jdk15to18:1.77'
+    implementation 'org.bouncycastle:bcutil-jdk15to18:1.77'
+    implementation 'org.bouncycastle:bcpkix-jdk15to18:1.77'
+
+    constraints {
+        implementation('org.bouncycastle:bcprov-jdk15to18:1.77') {
+            because "Pin Android-safe BouncyCastle artifacts to avoid Jetifier/transitive conflicts."
+        }
+        implementation('org.bouncycastle:bcutil-jdk15to18:1.77') {
+            because "Pin Android-safe BouncyCastle artifacts to avoid Jetifier/transitive conflicts."
+        }
+        implementation('org.bouncycastle:bcpkix-jdk15to18:1.77') {
+            because "Pin Android-safe BouncyCastle artifacts to avoid Jetifier/transitive conflicts."
+        }
+    }
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.12.2'
     testImplementation 'androidx.test:core:1.5.0'
+}
+
+tasks.register("verifySdkDependencies") {
+    group = "verification"
+    description = "Verifies SDK dependency resolution avoids forbidden BouncyCastle modules and pins versions."
+
+    doLast {
+        def forbiddenModules = [
+            "org.bouncycastle:bcprov-jdk18on",
+            "org.bouncycastle:bcpkix-jdk18on",
+            "org.bouncycastle:bcutil-jdk18on",
+            "org.bouncycastle:bcprov-jdk15on",
+            "org.bouncycastle:bcpkix-jdk15on",
+            "org.bouncycastle:bcutil-jdk15on"
+        ]
+        def pinnedVersions = [
+            "org.bouncycastle:bcprov-jdk15to18": "1.77",
+            "org.bouncycastle:bcpkix-jdk15to18": "1.77",
+            "org.bouncycastle:bcutil-jdk15to18": "1.77"
+        ]
+
+        def violations = []
+        configurations.findAll { it.canBeResolved }.each { config ->
+            def result = config.incoming.resolutionResult
+            result.allComponents.each { component ->
+                if (component.id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+                    def module = component.id.group + ":" + component.id.module
+                    if (forbiddenModules.contains(module)) {
+                        violations << "${config.name}: resolved forbidden module ${module}:${component.id.version}"
+                    }
+                    if (pinnedVersions.containsKey(module)) {
+                        def expected = pinnedVersions[module]
+                        if (component.id.version != expected) {
+                            violations << "${config.name}: ${module} resolved to ${component.id.version} (expected ${expected})"
+                        }
+                    }
+                }
+            }
+        }
+
+        pinnedVersions.each { module, expected ->
+            if (configurations.findAll { it.canBeResolved }.every { config ->
+                def hasModule = config.incoming.resolutionResult.allComponents.any { component ->
+                    component.id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier &&
+                        component.id.group + ":" + component.id.module == module
+                }
+                !hasModule
+            }) {
+                violations << "No resolved configuration contained pinned module ${module}:${expected}"
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            throw new GradleException("SDK dependency verification failed:\\n - " + violations.join("\\n - "))
+        }
+    }
 }

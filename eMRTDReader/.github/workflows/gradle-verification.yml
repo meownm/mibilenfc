@@ -25,5 +25,8 @@ jobs:
       - name: Verify Groovy DSL
         run: ./gradlew verifyGradleDsl
 
+      - name: Verify SDK dependency resolution
+        run: ./gradlew :sdk:verifySdkDependencies
+
       - name: Run SDK unit/integration tests
         run: ./gradlew :sdk:testDebugUnitTest
