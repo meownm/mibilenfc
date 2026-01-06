@@ -145,7 +145,7 @@ public final class DualOcrRunner {
     }
 
     private static OcrResult emptyOcrResult() {
-        return new OcrResult("", 0, OcrQuality.compute(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)));
+        return new OcrResult("", 0, OcrQuality.compute(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)), OcrResult.Engine.UNKNOWN);
     }
 
     private static final class OcrOutcome {

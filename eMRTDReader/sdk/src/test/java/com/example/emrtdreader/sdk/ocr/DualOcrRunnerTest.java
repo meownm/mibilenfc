@@ -30,8 +30,8 @@ public class DualOcrRunnerTest {
         Context context = ApplicationProvider.getApplicationContext();
         Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
 
-        OcrEngine mlKit = new FakeOcrEngine("mlkit", new OcrResult(TD3_VALID_RAW, 12, new OcrMetrics(0, 0, 0)), 0, false);
-        OcrEngine tess = new FakeOcrEngine("tess", new OcrResult(TD3_INVALID_RAW, 14, new OcrMetrics(0, 0, 0)), 0, false);
+        OcrEngine mlKit = new FakeOcrEngine("mlkit", new OcrResult(TD3_VALID_RAW, 12, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT), 0, false);
+        OcrEngine tess = new FakeOcrEngine("tess", new OcrResult(TD3_INVALID_RAW, 14, new OcrMetrics(0, 0, 0), OcrResult.Engine.TESSERACT), 0, false);
 
         DualOcrRunner.RunResult result = DualOcrRunner.runWithTimeout(
                 context,
@@ -45,6 +45,7 @@ public class DualOcrRunnerTest {
         assertNotNull(result.mrz);
         assertEquals(TD3_LINE1, result.mrz.line1);
         assertEquals(TD3_VALID_RAW, result.ocr.rawText);
+        assertEquals(OcrResult.Engine.ML_KIT, result.ocr.engine);
     }
 
     @Test
@@ -52,8 +53,8 @@ public class DualOcrRunnerTest {
         Context context = ApplicationProvider.getApplicationContext();
         Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
 
-        OcrEngine mlKit = new FakeOcrEngine("mlkit", new OcrResult(TD3_VALID_RAW, 10, new OcrMetrics(0, 0, 0)), 0, true);
-        OcrEngine tess = new FakeOcrEngine("tess", new OcrResult(TD3_VALID_RAW, 8, new OcrMetrics(0, 0, 0)), 0, false);
+        OcrEngine mlKit = new FakeOcrEngine("mlkit", new OcrResult(TD3_VALID_RAW, 10, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT), 0, true);
+        OcrEngine tess = new FakeOcrEngine("tess", new OcrResult(TD3_VALID_RAW, 8, new OcrMetrics(0, 0, 0), OcrResult.Engine.TESSERACT), 0, false);
 
         DualOcrRunner.RunResult result = DualOcrRunner.runWithTimeout(
                 context,
@@ -67,6 +68,7 @@ public class DualOcrRunnerTest {
         assertNotNull(result.mrz);
         assertEquals(TD3_LINE1, result.mrz.line1);
         assertEquals(TD3_VALID_RAW, result.ocr.rawText);
+        assertEquals(OcrResult.Engine.TESSERACT, result.ocr.engine);
     }
 
     @Test
@@ -74,8 +76,8 @@ public class DualOcrRunnerTest {
         Context context = ApplicationProvider.getApplicationContext();
         Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
 
-        OcrEngine mlKit = new FakeOcrEngine("mlkit", new OcrResult(TD3_VALID_RAW, 18, new OcrMetrics(0, 0, 0)), 200, false);
-        OcrEngine tess = new FakeOcrEngine("tess", new OcrResult(TD3_VALID_RAW, 9, new OcrMetrics(0, 0, 0)), 0, false);
+        OcrEngine mlKit = new FakeOcrEngine("mlkit", new OcrResult(TD3_VALID_RAW, 18, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT), 200, false);
+        OcrEngine tess = new FakeOcrEngine("tess", new OcrResult(TD3_VALID_RAW, 9, new OcrMetrics(0, 0, 0), OcrResult.Engine.TESSERACT), 0, false);
 
         DualOcrRunner.RunResult result = DualOcrRunner.runWithTimeout(
                 context,
@@ -89,6 +91,7 @@ public class DualOcrRunnerTest {
         assertNotNull(result.mrz);
         assertEquals(TD3_LINE1, result.mrz.line1);
         assertEquals(TD3_VALID_RAW, result.ocr.rawText);
+        assertEquals(OcrResult.Engine.TESSERACT, result.ocr.engine);
     }
 
     private static final class FakeOcrEngine implements OcrEngine {

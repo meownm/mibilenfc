@@ -33,10 +33,10 @@ public class MlKitOcrEngine implements OcrEngine {
             InputImage img = InputImage.fromBitmap(bitmap, rotationDegrees);
             Text text = Tasks.await(recognizer.process(img), OCR_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             long dt = System.currentTimeMillis() - t0;
-            return new OcrResult(text.getText(), dt, metrics);
+            return new OcrResult(text.getText(), dt, metrics, OcrResult.Engine.ML_KIT);
         } catch (Throwable e) {
             long dt = System.currentTimeMillis() - t0;
-            return new OcrResult("", dt, metrics);
+            return new OcrResult("", dt, metrics, OcrResult.Engine.ML_KIT);
         }
     }
 
