@@ -60,7 +60,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     private final MlKitOcrEngine mlKit = new MlKitOcrEngine();
     private final TesseractOcrEngine tess = new TesseractOcrEngine();
     private DualOcrRunner.Mode mode = DualOcrRunner.Mode.AUTO_DUAL;
-private MrzImageAnalyzer analyzer;
+    private MrzImageAnalyzer analyzer;
     private MrzResult latestMrz;
     private OcrResult latestOcr;
 
@@ -104,22 +104,26 @@ private MrzImageAnalyzer analyzer;
         ocrSpinner.setAdapter(adapter);
         ocrSpinner.setSelection(0);
         ocrSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-    @Override public void onItemSelected(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
-        if (position == 0) {
-            mode = DualOcrRunner.Mode.AUTO_DUAL;
-        } else if (position == 1) {
-            mode = DualOcrRunner.Mode.MLKIT_ONLY;
-        } else {
-            mode = DualOcrRunner.Mode.TESS_ONLY;
-        }
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
+                if (position == 0) {
+                    mode = DualOcrRunner.Mode.AUTO_DUAL;
+                } else if (position == 1) {
+                    mode = DualOcrRunner.Mode.MLKIT_ONLY;
+                } else {
+                    mode = DualOcrRunner.Mode.TESS_ONLY;
+                }
 
-        if (analyzer != null) {
-            analyzer.setMode(mode);
-            analyzer.resetBurst();
-        }
+                if (analyzer != null) {
+                    analyzer.setMode(mode);
+                    analyzer.resetBurst();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
     }
-    @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
-});
 
     private void setupButtons() {
         logCopyButton.setOnClickListener(v -> {
