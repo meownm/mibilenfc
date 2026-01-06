@@ -11,6 +11,8 @@ Android app that reads eMRTD (ICAO 9303) documents using:
 - Android SDK 33 (platforms;android-33, build-tools;33.x)
 - A physical Android device with NFC
 - CameraX artifacts (camera-core, camera-camera2, camera-lifecycle, camera-view) via the CameraX BOM
+- Gradle repositories: `google()` and `mavenCentral()`
+- Tess-two dependency: `com.rmtheis:tess-two:9.1.0`
 
 ## Setup (Windows / PowerShell)
 1) Create `local.properties` in project root:
