@@ -52,6 +52,7 @@ import com.example.emrtdreader.sdk.utils.MrzParser;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.Locale;
 
 public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyzer.Listener {
 
@@ -269,7 +270,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
                 mrzTextView.setText("Camera not delivering frames");
             }
             if (ocr != null) {
-                appendLogLine(buildOcrLogLine(ocr));
+                appendLogLine(buildFrameLogLine(ocr, bestSingle));
                 appendRawOcrLog("RAW OCR (" + ocr.engine.name() + "):\n" + normalizeRawOcrText(ocr.rawText));
                 metricsTextView.setText(
                         "Mode: " + mode.name() +
@@ -421,11 +422,38 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         return "robolectric".equalsIgnoreCase(Build.FINGERPRINT) ? 0L : OVERLAY_ANIMATION_MS;
     }
 
-    private String buildOcrLogLine(OcrResult ocr) {
-        return "OCR (" + ocr.engine.name() + ") " + ocr.elapsedMs + "ms"
-                + " | brightness " + String.format("%.0f", ocr.metrics.brightness)
-                + " | contrast " + String.format("%.0f", ocr.metrics.contrast)
-                + " | sharpness " + String.format("%.0f", ocr.metrics.sharpness);
+    private String buildFrameLogLine(OcrResult ocr, MrzResult bestSingle) {
+        long timestamp = System.currentTimeMillis();
+        boolean mrzValid = bestSingle != null;
+        String rawText = ocr != null ? ocr.rawText : "";
+        int mlLen = 0;
+        int tessLen = 0;
+        if (ocr != null) {
+            if (ocr.engine == OcrResult.Engine.ML_KIT) {
+                mlLen = rawLength(rawText);
+            } else if (ocr.engine == OcrResult.Engine.TESSERACT) {
+                tessLen = rawLength(rawText);
+            }
+        }
+        return "[frame] ts=" + timestamp
+                + " mean=" + formatMetric(ocr.metrics.brightness)
+                + " contrast=" + formatMetric(ocr.metrics.contrast)
+                + " sharp=" + formatMetric(ocr.metrics.sharpness)
+                + " engine=" + ocr.engine.name()
+                + " mrzValid=" + mrzValid
+                + " mlLen=" + mlLen
+                + " tessLen=" + tessLen;
+    }
+
+    private String formatMetric(double metric) {
+        return String.format(Locale.US, "%.1f", metric);
+    }
+
+    private int rawLength(String rawText) {
+        if (rawText == null || rawText.isEmpty()) {
+            return 0;
+        }
+        return rawText.length();
     }
 
     private String normalizeRawOcrText(String rawText) {
@@ -449,13 +477,10 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         if (logTextView == null) {
             return;
         }
-        CharSequence existing = logTextView.getText();
-        StringBuilder builder = new StringBuilder();
-        if (existing != null && existing.length() > 0) {
-            builder.append(existing).append("\n");
+        if (logTextView.length() > 0) {
+            logTextView.append("\n");
         }
-        builder.append(line);
-        logTextView.setText(builder.toString());
+        logTextView.append(line);
         if (logScrollView != null) {
             logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN));
         }

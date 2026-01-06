@@ -1,0 +1,87 @@
+package com.example.emrtdreader;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Rect;
+import android.widget.TextView;
+
+import androidx.test.core.app.ActivityScenario;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
+import com.example.emrtdreader.sdk.models.MrzFormat;
+import com.example.emrtdreader.sdk.models.MrzResult;
+import com.example.emrtdreader.sdk.models.OcrMetrics;
+import com.example.emrtdreader.sdk.models.OcrResult;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@RunWith(AndroidJUnit4.class)
+public class MRZScanActivityLogTest {
+
+    @Test
+    public void frameLogLineIncludesMrzValidityAndLengths() {
+        try (ActivityScenario<MRZScanActivity> scenario = ActivityScenario.launch(createIntent())) {
+            scenario.onActivity(activity -> {
+                OcrResult ocr = new OcrResult("P<UTO", 120L, new OcrMetrics(100.2, 42.5, 9.1), OcrResult.Engine.ML_KIT);
+                MrzResult mrz = new MrzResult("P<UTOERIKSSON<<ANNA<MARIA", "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+                        null, MrzFormat.TD3, 3);
+                activity.onOcr(ocr, mrz, new Rect(0, 0, 10, 10));
+
+                TextView logView = activity.findViewById(R.id.logTextView);
+                assertNotNull(logView);
+                String logText = logView.getText().toString();
+                Pattern pattern = Pattern.compile(
+                        "\\[frame\\] ts=\\d+ mean=\\d+\\.\\d contrast=\\d+\\.\\d sharp=\\d+\\.\\d engine=ML_KIT mrzValid=true mlLen=\\d+ tessLen=0");
+                Matcher matcher = pattern.matcher(logText);
+                assertTrue("Frame log line missing or malformed: " + logText, matcher.find());
+            });
+        }
+    }
+
+    @Test
+    public void frameLogsAccumulateForMultipleFrames() {
+        try (ActivityScenario<MRZScanActivity> scenario = ActivityScenario.launch(createIntent())) {
+            scenario.onActivity(activity -> {
+                OcrResult first = new OcrResult("", 80L, new OcrMetrics(80.0, 20.0, 5.0), OcrResult.Engine.TESSERACT);
+                activity.onOcr(first, null, new Rect(0, 0, 5, 5));
+                OcrResult second = new OcrResult("ABC", 90L, new OcrMetrics(70.0, 18.0, 4.0), OcrResult.Engine.ML_KIT);
+                activity.onOcr(second, null, new Rect(0, 0, 5, 5));
+
+                TextView logView = activity.findViewById(R.id.logTextView);
+                assertNotNull(logView);
+                String logText = logView.getText().toString();
+                int occurrences = countOccurrences(logText, "[frame]");
+                assertEquals("Expected two frame log entries", 2, occurrences);
+                assertTrue("Expected mrzValid=false in log output", logText.contains("mrzValid=false"));
+            });
+        }
+    }
+
+    private Intent createIntent() {
+        Context context = androidx.test.core.app.ApplicationProvider.getApplicationContext();
+        Intent intent = new Intent(context, MRZScanActivity.class);
+        intent.putExtra(MRZScanActivity.EXTRA_DISABLE_CAMERA, true);
+        return intent;
+    }
+
+    private int countOccurrences(String text, String token) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        int index = 0;
+        while ((index = text.indexOf(token, index)) != -1) {
+            count++;
+            index += token.length();
+        }
+        return count;
+    }
+}
