@@ -180,4 +180,18 @@ public class MRZScanActivityTest {
         TextView mrzTextView = activity.findViewById(R.id.mrzTextView);
         assertEquals("Camera not delivering frames", mrzTextView.getText().toString());
     }
+
+    @Test
+    public void onAnalyzerErrorShowsToastAndStatus() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        activity.onAnalyzerError("Frame decode failed", new RuntimeException("boom"));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView mrzTextView = activity.findViewById(R.id.mrzTextView);
+        assertEquals("Analyzer error: Frame decode failed", mrzTextView.getText().toString());
+        assertEquals("Analyzer error: Frame decode failed", ShadowToast.getTextOfLatestToast());
+    }
 }
