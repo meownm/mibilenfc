@@ -20,7 +20,7 @@ dependencies {
 - Internet: optional (for Tesseract traineddata auto-download)
 
 ## OCR modes
-- Auto (Dual): ML Kit + Tesseract, best result selected by checksum score
+- Auto (ML-first): ML Kit runs on lightweight MRZ preprocessing; if the text fails conservative MRZ validation (length ≥ 44, allowed charset, contains `<<`), Tesseract runs on the heavy binarized bitmap
 - ML Kit only
 - Tesseract only
 

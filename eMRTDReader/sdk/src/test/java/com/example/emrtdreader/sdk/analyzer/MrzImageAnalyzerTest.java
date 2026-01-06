@@ -441,6 +441,41 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
+    public void analyzeAutoDualSkipsTessWhenMlValid() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+        OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
+                TD3_MRZ,
+                1,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.ML_KIT
+        ));
+        AtomicBoolean tessCalled = new AtomicBoolean(false);
+        OcrEngine tess = new FlagOnlyOcrEngine(tessCalled);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                tess,
+                DualOcrRunner.Mode.AUTO_DUAL,
+                0,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 320, 240);
+        analyzer.analyze(imageProxy);
+
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+        assertTrue(!tessCalled.get());
+    }
+
+    @Test
     public void analyzeDetectsMrzAcrossConvertedFrames() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
@@ -754,6 +789,34 @@ public class MrzImageAnalyzerTest {
         @Override
         public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
             callback.onSuccess(result);
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static class FlagOnlyOcrEngine implements OcrEngine {
+        private final AtomicBoolean called;
+
+        private FlagOnlyOcrEngine(AtomicBoolean called) {
+            this.called = called;
+        }
+
+        @Override
+        public String getName() {
+            return "flag-only";
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
+            called.set(true);
+            callback.onSuccess(new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.TESSERACT));
         }
 
         @Override

@@ -16,6 +16,7 @@ import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrResult;
 import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
 import com.example.emrtdreader.sdk.ocr.MrzAutoDetector;
+import com.example.emrtdreader.sdk.ocr.OcrRouter;
 import com.example.emrtdreader.sdk.ocr.OcrEngine;
 import com.example.emrtdreader.sdk.ocr.RectAverager;
 import com.example.emrtdreader.sdk.utils.MrzBurstAggregator;
@@ -148,6 +149,52 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     }
 
     private void runOcrAsync(Bitmap roiBmp, int rotationDeg, Rect stable) {
+        if (mode == DualOcrRunner.Mode.AUTO_DUAL) {
+            OcrRouter.runAsync(appContext, mlKitEngine, tessEngine, roiBmp, rotationDeg, new OcrRouter.Callback() {
+                @Override
+                public void onSuccess(OcrRouter.Result result, MrzResult mrz) {
+                    ocrInFlight.set(false);
+                    if (finished.get()) {
+                        return;
+                    }
+
+                    OcrResult ocr = new OcrResult(
+                            result.finalText,
+                            result.elapsedMs,
+                            result.metrics,
+                            result.engine
+                    );
+
+                    if (listener != null) {
+                        listener.onOcr(ocr, mrz, stable);
+                        notifyOcrState(ocr);
+                    }
+
+                    if (mrz != null) {
+                        if (listener != null) listener.onScanState(ScanState.MRZ_FOUND, "MRZ detected");
+                        MrzResult finalMrz = aggregator.addAndMaybeAggregate(mrz);
+                        if (finalMrz != null) {
+                            finished.set(true);
+                            if (listener != null) listener.onFinalMrz(finalMrz, stable);
+                        }
+                    } else if (listener != null) {
+                        listener.onScanState(ScanState.WAITING, "Waiting for MRZ");
+                    }
+                }
+
+                @Override
+                public void onFailure(Throwable error) {
+                    ocrInFlight.set(false);
+                    String cause = error != null ? error.getMessage() : null;
+                    if (cause == null || cause.trim().isEmpty()) {
+                        cause = "unknown error";
+                    }
+                    notifyError("OCR failed: " + cause, error);
+                }
+            });
+            return;
+        }
+
         DualOcrRunner.runAsync(appContext, mode, mlKitEngine, tessEngine, roiBmp, rotationDeg,
                 new DualOcrRunner.RunCallback() {
                     @Override
