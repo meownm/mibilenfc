@@ -3,11 +3,8 @@ package com.example.emrtdreader.sdk.ocr;
 import android.content.Context;
 import android.graphics.Bitmap;
 
-import com.example.emrtdreader.sdk.models.MrzFormat;
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrResult;
-import com.example.emrtdreader.sdk.utils.MrzNormalizer;
-import com.example.emrtdreader.sdk.utils.MrzRepair;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -201,7 +198,7 @@ public final class DualOcrRunner {
             engine.recognizeAsync(ctx, input, rotationDeg, new OcrEngine.Callback() {
                 @Override
                 public void onSuccess(OcrResult result) {
-                    MrzResult mrz = normalizeAndRepair(result != null ? result.rawText : "");
+                    MrzResult mrz = MrzTextProcessor.normalizeAndRepair(result != null ? result.rawText : "");
                     future.complete(new OcrOutcome(result, mrz, null));
                 }
 
@@ -228,21 +225,6 @@ public final class DualOcrRunner {
     private static Bitmap preprocessForTess(Bitmap roi) {
         Bitmap pre = MrzPreprocessor.preprocess(roi);
         return AdaptiveThreshold.binarize(pre);
-    }
-
-    private static MrzResult normalizeAndRepair(String raw) {
-        MrzResult m = MrzNormalizer.normalizeBest(raw);
-        if (m == null) return null;
-
-        if (m.format == MrzFormat.TD3) {
-            // TD3 repair mostly affects line2 numeric/check digits
-            String fixedL2 = MrzRepair.repairTd3Line2(m.line2);
-            m = new MrzResult(m.line1, fixedL2, null, MrzFormat.TD3, com.example.emrtdreader.sdk.utils.MrzValidation.scoreTd3(m.line1, fixedL2));
-        } else if (m.format == MrzFormat.TD1 && m.line3 != null) {
-            String[] fixed = MrzRepair.repairTd1(m.line1, m.line2, m.line3);
-            m = new MrzResult(fixed[0], fixed[1], fixed[2], MrzFormat.TD1, com.example.emrtdreader.sdk.utils.MrzValidation.scoreTd1(fixed[0], fixed[1], fixed[2]));
-        }
-        return m;
     }
 
     private static MrzResult pickBest(MrzResult a, MrzResult b) {
