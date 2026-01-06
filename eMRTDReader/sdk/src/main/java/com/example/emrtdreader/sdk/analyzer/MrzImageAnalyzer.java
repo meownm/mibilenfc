@@ -92,23 +92,32 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         }
         lastTs = now;
 
+        boolean closed = false;
         try {
             int rotationDeg = image.getImageInfo().getRotationDegrees();
-            Bitmap frame = imageProxyToBitmap(image);
-            if (frame == null) return;
+            Bitmap bitmap = imageProxyToBitmap(image);
+            if (bitmap == null) {
+                throw new IllegalStateException("Failed to convert ImageProxy to Bitmap");
+            }
+            Bitmap safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
+            image.close();
+            closed = true;
+            if (safeBitmap == null) {
+                throw new IllegalStateException("Failed to copy bitmap for analysis");
+            }
 
             if (rotationDeg != 0) {
                 Matrix m = new Matrix();
                 m.postRotate(rotationDeg);
-                frame = Bitmap.createBitmap(frame, 0, 0, frame.getWidth(), frame.getHeight(), m, true);
+                safeBitmap = Bitmap.createBitmap(safeBitmap, 0, 0, safeBitmap.getWidth(), safeBitmap.getHeight(), m, true);
                 rotationDeg = 0;
             }
 
-            Rect detected = MrzAutoDetector.detect(frame);
+            Rect detected = MrzAutoDetector.detect(safeBitmap);
             if (detected == null) return;
 
-            Rect stable = rectAverager.update(detected, frame.getWidth(), frame.getHeight());
-            Bitmap roiBmp = Bitmap.createBitmap(frame, stable.left, stable.top, stable.width(), stable.height());
+            Rect stable = rectAverager.update(detected, safeBitmap.getWidth(), safeBitmap.getHeight());
+            Bitmap roiBmp = Bitmap.createBitmap(safeBitmap, stable.left, stable.top, stable.width(), stable.height());
 
             DualOcrRunner.RunResult rr = DualOcrRunner.run(appContext, mode, mlKitEngine, tessEngine, roiBmp, rotationDeg);
             if (listener != null) listener.onOcr(rr.ocr, rr.mrz, stable);
@@ -121,12 +130,13 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                 }
             }
         } catch (Throwable e) {
+            if (!closed) {
+                image.close();
+            }
             Log.e("MRZ", "Analyzer error while processing frame", e);
             if (listener != null) {
                 listener.onAnalyzerError("Analyzer error while processing frame", e);
             }
-        } finally {
-            image.close();
         }
     }
 
