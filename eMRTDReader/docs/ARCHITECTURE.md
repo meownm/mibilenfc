@@ -27,6 +27,7 @@ Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (fr
 - `YuvBitmapConverter` defines a small `Converter` interface (`yuvToRgb(Image, Bitmap)`) so the SDK depends only on `android.media.Image`, `android.graphics.Bitmap`, and CameraX `ImageProxy` at its boundary. The default adapter lives in the SDK and can be swapped in tests or by callers without exposing CameraX-internal classes to the rest of the pipeline.
 - The analyzer always works on an immutable copy (`safeBitmap`) so rotation, MRZ detection, ROI cropping, and OCR remain safe even after the `ImageProxy` is closed asynchronously.
 - The conversion path avoids manual plane-buffer access and NV21/JPEG round-trips, preserving per-pixel fidelity while keeping the MRZ band legible in low-light or overexposed frames.
+- OCR routing and preprocessing parameter selection are keyed using the rotated frame dimensions (post-rotation width/height) alongside the camera ID, so portrait vs. landscape routing stays consistent after rotation is applied.
 - Tradeoff: per-frame conversion plus brightness normalization adds some CPU work and may slightly compress highlight/shadow detail when scaling luma, but it avoids JPEG artifacts and keeps OCR quality stable across exposure changes.
 - The `ImageProxy` is closed right after the safe bitmap copy completes, before MRZ detection or OCR begins.
 - OCR is dispatched asynchronously via callbacks; the analyzer thread never blocks on OCR completion. Callbacks may arrive on background threads and should be treated as non-UI.
