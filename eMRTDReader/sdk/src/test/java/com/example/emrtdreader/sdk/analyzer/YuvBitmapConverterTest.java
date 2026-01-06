@@ -17,20 +17,25 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
 public class YuvBitmapConverterTest {
     @Test
     public void toBitmapUsesConverterOutputWhenWithinRange() {
         Bitmap sample = createSampleFrame(160, 120, Color.rgb(140, 140, 140), Color.rgb(220, 220, 220));
+        AtomicBoolean invoked = new AtomicBoolean(false);
         YuvBitmapConverter converter = new YuvBitmapConverter((image, bitmap) -> {
             assertTrue(bitmap.isMutable());
+            invoked.set(true);
             Canvas canvas = new Canvas(bitmap);
             canvas.drawBitmap(sample, 0, 0, null);
         });
 
         Bitmap converted = converter.toBitmap(createImageProxy(160, 120));
 
+        assertTrue(invoked.get());
         assertTrue(converted.getPixel(4, 4) == sample.getPixel(4, 4));
     }
 
