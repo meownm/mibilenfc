@@ -44,7 +44,9 @@ dependencies {
     /* =========================
        Tesseract
        ========================= */
-    implementation("com.googlecode.tesseract.android:tess-two:9.1.0")
+    implementation "com.github.rmtheis:tess-two:9.1.0"
+
+
 
     /* =========================
        JMRTD + SmartCards
