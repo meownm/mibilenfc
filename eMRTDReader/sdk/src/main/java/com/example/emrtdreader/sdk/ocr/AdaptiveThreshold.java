@@ -11,14 +11,18 @@ public final class AdaptiveThreshold {
     private AdaptiveThreshold() {}
 
     public static Bitmap binarize(Bitmap gray) {
+        return binarize(gray, 15, 5);
+    }
+
+    public static Bitmap binarize(Bitmap gray, int blockSize, int offset) {
         if (gray == null) return null;
 
         final int w = gray.getWidth();
         final int h = gray.getHeight();
         final Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
 
-        final int radius = 7;   // 7..11 is a good range for MRZ
-        final int offset = 5;   // small offset makes chars darker vs background
+        final int safeBlock = blockSize < 3 ? 3 : (blockSize % 2 == 0 ? blockSize + 1 : blockSize);
+        final int radius = safeBlock / 2;
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {

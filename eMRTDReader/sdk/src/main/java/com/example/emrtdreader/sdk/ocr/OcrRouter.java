@@ -60,9 +60,8 @@ public final class OcrRouter {
         PREPROCESS_EXECUTOR.execute(() -> {
             try {
                 Bitmap mlInput = MrzPreprocessor.preprocessForMl(roi);
-                Bitmap tessInput = MrzPreprocessor.preprocessForTesseract(roi);
                 OcrMetrics frameMetrics = OcrQuality.compute(roi);
-                runMlThenMaybeTess(ctx, mlKit, tess, mlInput, tessInput, rotationDeg, frameMetrics, callback);
+                runMlThenMaybeTess(ctx, mlKit, tess, roi, mlInput, rotationDeg, frameMetrics, callback);
             } catch (Throwable e) {
                 callback.onFailure(new IllegalStateException("OCR preprocessing failed", e));
             }
@@ -72,8 +71,8 @@ public final class OcrRouter {
     private static void runMlThenMaybeTess(Context ctx,
                                            OcrEngine mlKit,
                                            OcrEngine tess,
+                                           Bitmap roi,
                                            Bitmap mlInput,
-                                           Bitmap tessInput,
                                            int rotationDeg,
                                            OcrMetrics frameMetrics,
                                            Callback callback) {
@@ -91,41 +90,83 @@ public final class OcrRouter {
                             callback);
                     return;
                 }
-                runTessFallback(ctx, tess, tessInput, rotationDeg, frameMetrics, mlText, callback);
+                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, mlText, callback);
             }
 
             @Override
             public void onFailure(Throwable error) {
-                runTessFallback(ctx, tess, tessInput, rotationDeg, frameMetrics, "", callback);
+                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, "", callback);
             }
         });
     }
 
     private static void runTessFallback(Context ctx,
                                         OcrEngine tess,
-                                        Bitmap tessInput,
+                                        Bitmap roi,
                                         int rotationDeg,
                                         OcrMetrics frameMetrics,
                                         String mlText,
                                         Callback callback) {
-        runEngineAsync(ctx, tess, tessInput, rotationDeg, new EngineCallback() {
-            @Override
-            public void onSuccess(OcrResult result) {
-                String tessText = result != null ? result.rawText : "";
-                publishResult(result != null ? result.engine : OcrResult.Engine.TESSERACT,
-                        mlText,
-                        tessText,
-                        tessText,
-                        frameMetrics,
-                        result != null ? result.elapsedMs : 0L,
-                        callback);
-            }
+        runTessCandidateLoop(ctx, tess, roi, rotationDeg, frameMetrics, mlText, callback);
+    }
 
-            @Override
-            public void onFailure(Throwable error) {
-                callback.onFailure(error != null ? error : new IllegalStateException("OCR failed"));
+    private static void runTessCandidateLoop(Context ctx,
+                                             OcrEngine tess,
+                                             Bitmap roi,
+                                             int rotationDeg,
+                                             OcrMetrics frameMetrics,
+                                             String mlText,
+                                             Callback callback) {
+        final java.util.List<PreprocessParams> candidates = PreprocessParamSet.getCandidates();
+        final java.util.List<OcrResult> results = new java.util.ArrayList<>(candidates.size());
+        final java.util.List<String> texts = new java.util.ArrayList<>(candidates.size());
+        final java.util.concurrent.atomic.AtomicReference<Throwable> lastError =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        class Runner {
+            void runAt(int index) {
+                if (index >= candidates.size()) {
+                    int bestIndex = PreprocessParamSelection.pickBestIndex(texts);
+                    if (bestIndex < 0) {
+                        Throwable error = lastError.get();
+                        callback.onFailure(error != null ? error : new IllegalStateException("OCR failed"));
+                        return;
+                    }
+                    OcrResult bestResult = results.get(bestIndex);
+                    String tessText = texts.get(bestIndex);
+                    publishResult(bestResult != null ? bestResult.engine : OcrResult.Engine.TESSERACT,
+                            mlText,
+                            tessText,
+                            tessText,
+                            frameMetrics,
+                            bestResult != null ? bestResult.elapsedMs : 0L,
+                            callback);
+                    return;
+                }
+
+                PreprocessParams params = candidates.get(index);
+                Bitmap tessInput = MrzPreprocessor.preprocessForTesseract(roi, params);
+                runEngineAsync(ctx, tess, tessInput, rotationDeg, new EngineCallback() {
+                    @Override
+                    public void onSuccess(OcrResult result) {
+                        String tessText = result != null ? result.rawText : "";
+                        results.add(result);
+                        texts.add(tessText);
+                        runAt(index + 1);
+                    }
+
+                    @Override
+                    public void onFailure(Throwable error) {
+                        lastError.set(error);
+                        results.add(null);
+                        texts.add("");
+                        runAt(index + 1);
+                    }
+                });
             }
-        });
+        }
+
+        new Runner().runAt(0);
     }
 
     private static void publishResult(OcrResult.Engine engine,

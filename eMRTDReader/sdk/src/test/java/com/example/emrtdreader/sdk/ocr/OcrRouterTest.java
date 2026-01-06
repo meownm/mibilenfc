@@ -196,8 +196,11 @@ public class OcrRouterTest {
         assertNotNull(mlBitmap);
         assertNotNull(tessBitmap);
         assertTrue("ML input should remain non-binarized", hasNonBinaryPixel(mlBitmap));
-        assertTrue("Tesseract input should be binarized", isBinarized(tessBitmap));
-        assertTrue("Tesseract input should be scaled up", tessBitmap.getWidth() > mlBitmap.getWidth());
+        for (Bitmap candidate : tess.capturedBitmaps) {
+            assertTrue("Tesseract input should be binarized", isBinarized(candidate));
+            assertTrue("Tesseract input should be scaled up", candidate.getWidth() > mlBitmap.getWidth());
+        }
+        assertEquals(PreprocessParamSet.getCandidates().size(), tess.capturedBitmaps.size());
     }
 
     private static final class FixedOcrEngine implements OcrEngine {
@@ -308,6 +311,8 @@ public class OcrRouterTest {
     private static final class CapturingOcrEngine implements OcrEngine {
         private final OcrResult result;
         private final AtomicReference<Bitmap> lastBitmap = new AtomicReference<>();
+        private final java.util.List<Bitmap> capturedBitmaps =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
         private CapturingOcrEngine(OcrResult result) {
             this.result = result;
@@ -326,6 +331,7 @@ public class OcrRouterTest {
         @Override
         public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
             lastBitmap.set(bitmap);
+            capturedBitmaps.add(bitmap);
             callback.onSuccess(result);
         }
 
