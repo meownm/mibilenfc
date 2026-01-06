@@ -52,6 +52,20 @@ public final class OcrRouter {
                                 Bitmap roi,
                                 int rotationDeg,
                                 Callback callback) {
+        int width = roi != null ? roi.getWidth() : 0;
+        int height = roi != null ? roi.getHeight() : 0;
+        runAsync(ctx, mlKit, tess, roi, rotationDeg, "default", width, height, callback);
+    }
+
+    public static void runAsync(Context ctx,
+                                OcrEngine mlKit,
+                                OcrEngine tess,
+                                Bitmap roi,
+                                int rotationDeg,
+                                String cameraId,
+                                int frameWidth,
+                                int frameHeight,
+                                Callback callback) {
         if (roi == null) {
             callback.onSuccess(new Result(OcrResult.Engine.UNKNOWN, "", "", "", new OcrMetrics(0, 0, 0), 0L), null);
             return;
@@ -61,7 +75,8 @@ public final class OcrRouter {
             try {
                 Bitmap mlInput = MrzPreprocessor.preprocessForMl(roi);
                 OcrMetrics frameMetrics = OcrQuality.compute(roi);
-                runMlThenMaybeTess(ctx, mlKit, tess, roi, mlInput, rotationDeg, frameMetrics, callback);
+                runMlThenMaybeTess(ctx, mlKit, tess, roi, mlInput, rotationDeg, frameMetrics,
+                        cameraId, frameWidth, frameHeight, callback);
             } catch (Throwable e) {
                 callback.onFailure(new IllegalStateException("OCR preprocessing failed", e));
             }
@@ -75,6 +90,9 @@ public final class OcrRouter {
                                            Bitmap mlInput,
                                            int rotationDeg,
                                            OcrMetrics frameMetrics,
+                                           String cameraId,
+                                           int frameWidth,
+                                           int frameHeight,
                                            Callback callback) {
         runEngineAsync(ctx, mlKit, mlInput, rotationDeg, new EngineCallback() {
             @Override
@@ -91,12 +109,14 @@ public final class OcrRouter {
                             callback);
                     return;
                 }
-                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, result, mlText, callback);
+                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, result, mlText,
+                        cameraId, frameWidth, frameHeight, callback);
             }
 
             @Override
             public void onFailure(Throwable error) {
-                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, null, "", callback);
+                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, null, "",
+                        cameraId, frameWidth, frameHeight, callback);
             }
         });
     }
@@ -108,8 +128,12 @@ public final class OcrRouter {
                                         OcrMetrics frameMetrics,
                                         OcrResult mlResult,
                                         String mlText,
+                                        String cameraId,
+                                        int frameWidth,
+                                        int frameHeight,
                                         Callback callback) {
-        runTessCandidateLoop(ctx, tess, roi, rotationDeg, frameMetrics, mlResult, mlText, callback);
+        runTessCandidateLoop(ctx, tess, roi, rotationDeg, frameMetrics, mlResult, mlText,
+                cameraId, frameWidth, frameHeight, callback);
     }
 
     private static void runTessCandidateLoop(Context ctx,
@@ -119,8 +143,13 @@ public final class OcrRouter {
                                              OcrMetrics frameMetrics,
                                              OcrResult mlResult,
                                              String mlText,
+                                             String cameraId,
+                                             int frameWidth,
+                                             int frameHeight,
                                              Callback callback) {
-        final java.util.List<PreprocessParams> candidates = PreprocessParamSet.getCandidates();
+        PreprocessParamStore store = new PreprocessParamStore(ctx);
+        PreprocessParams storedParams = store.load(cameraId, frameWidth, frameHeight);
+        final java.util.List<PreprocessParams> candidates = buildCandidates(storedParams);
         final java.util.List<OcrResult> results = new java.util.ArrayList<>(candidates.size());
         final java.util.List<String> texts = new java.util.ArrayList<>(candidates.size());
         final java.util.concurrent.atomic.AtomicReference<Throwable> lastError =
@@ -146,6 +175,8 @@ public final class OcrRouter {
                         callback.onFailure(error != null ? error : new IllegalStateException("OCR failed"));
                         return;
                     }
+                    PreprocessParams bestParams = candidates.get(bestIndex);
+                    store.save(cameraId, frameWidth, frameHeight, bestParams);
                     OcrResult bestResult = results.get(bestIndex);
                     String tessText = texts.get(bestIndex);
                     CandidateSelection selection = pickBestCandidate(mlResult, bestResult, mlText, tessText);
@@ -182,6 +213,19 @@ public final class OcrRouter {
         }
 
         new Runner().runAt(0);
+    }
+
+    private static java.util.List<PreprocessParams> buildCandidates(PreprocessParams stored) {
+        java.util.List<PreprocessParams> candidates = new java.util.ArrayList<>();
+        if (stored != null) {
+            candidates.add(stored);
+        }
+        for (PreprocessParams params : PreprocessParamSet.getCandidates()) {
+            if (!params.equals(stored)) {
+                candidates.add(params);
+            }
+        }
+        return candidates;
     }
 
     private static void publishResult(OcrResult.Engine engine,

@@ -238,7 +238,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
-                analyzer = new MrzImageAnalyzer(getApplicationContext(), mlKit, tess, mode, 200, this);
+                analyzer = new MrzImageAnalyzer(getApplicationContext(), mlKit, tess, mode, 200, "back", this);
                 analysis.setAnalyzer(analysisExecutor, analyzer);
 
                 provider.unbindAll();

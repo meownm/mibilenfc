@@ -49,6 +49,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     private final AtomicBoolean finished = new AtomicBoolean(false);
     private final AtomicBoolean ocrInFlight = new AtomicBoolean(false);
     private final YuvBitmapConverter yuvBitmapConverter;
+    private final String cameraId;
 
     private volatile OcrEngine mlKitEngine;
     private volatile OcrEngine tessEngine;
@@ -63,7 +64,17 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                            DualOcrRunner.Mode mode,
                            long intervalMs,
                            Listener listener) {
-        this(ctx, mlKit, tess, mode, intervalMs, listener, new YuvBitmapConverter(ctx.getApplicationContext()));
+        this(ctx, mlKit, tess, mode, intervalMs, "default", listener, new YuvBitmapConverter(ctx.getApplicationContext()));
+    }
+
+    public MrzImageAnalyzer(Context ctx,
+                            OcrEngine mlKit,
+                            OcrEngine tess,
+                            DualOcrRunner.Mode mode,
+                            long intervalMs,
+                            String cameraId,
+                            Listener listener) {
+        this(ctx, mlKit, tess, mode, intervalMs, cameraId, listener, new YuvBitmapConverter(ctx.getApplicationContext()));
     }
 
     @VisibleForTesting
@@ -72,6 +83,18 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                      OcrEngine tess,
                      DualOcrRunner.Mode mode,
                      long intervalMs,
+                     Listener listener,
+                     YuvBitmapConverter yuvBitmapConverter) {
+        this(ctx, mlKit, tess, mode, intervalMs, "default", listener, yuvBitmapConverter);
+    }
+
+    @VisibleForTesting
+    MrzImageAnalyzer(Context ctx,
+                     OcrEngine mlKit,
+                     OcrEngine tess,
+                     DualOcrRunner.Mode mode,
+                     long intervalMs,
+                     String cameraId,
                      Listener listener,
                      YuvBitmapConverter yuvBitmapConverter) {
         this.appContext = ctx.getApplicationContext();
@@ -83,6 +106,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         this.aggregator = new MrzBurstAggregator(3, 12);
         this.rectAverager = new RectAverager(6, 0.35f);
         this.yuvBitmapConverter = yuvBitmapConverter;
+        this.cameraId = cameraId;
     }
 
     public void setMode(DualOcrRunner.Mode mode) {
@@ -112,6 +136,8 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         boolean closed = false;
         try {
             int rotationDeg = image.getImageInfo().getRotationDegrees();
+            int frameWidth = image.getWidth();
+            int frameHeight = image.getHeight();
             Bitmap bitmap = imageProxyToBitmap(image);
             Bitmap safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
             image.close();
@@ -144,7 +170,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                 return;
             }
 
-            runOcrAsync(roiBmp, rotationDeg, stable);
+            runOcrAsync(roiBmp, rotationDeg, stable, frameWidth, frameHeight);
         } catch (Throwable e) {
             if (!closed) {
                 image.close();
@@ -157,9 +183,10 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         }
     }
 
-    private void runOcrAsync(Bitmap roiBmp, int rotationDeg, Rect stable) {
+    private void runOcrAsync(Bitmap roiBmp, int rotationDeg, Rect stable, int frameWidth, int frameHeight) {
         if (mode == DualOcrRunner.Mode.AUTO_DUAL) {
-            OcrRouter.runAsync(appContext, mlKitEngine, tessEngine, roiBmp, rotationDeg, new OcrRouter.Callback() {
+            OcrRouter.runAsync(appContext, mlKitEngine, tessEngine, roiBmp, rotationDeg,
+                    cameraId, frameWidth, frameHeight, new OcrRouter.Callback() {
                 @Override
                 public void onSuccess(OcrRouter.Result result, MrzResult mrz) {
                     ocrInFlight.set(false);
