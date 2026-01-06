@@ -141,8 +141,6 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         boolean closed = false;
         try {
             int rotationDeg = image.getImageInfo().getRotationDegrees();
-            int frameWidth = image.getWidth();
-            int frameHeight = image.getHeight();
             Bitmap bitmap = imageProxyToBitmap(image);
             Bitmap safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
             image.close();
@@ -157,6 +155,8 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                 safeBitmap = Bitmap.createBitmap(safeBitmap, 0, 0, safeBitmap.getWidth(), safeBitmap.getHeight(), m, true);
                 rotationDeg = 0;
             }
+            int frameWidth = safeBitmap.getWidth();
+            int frameHeight = safeBitmap.getHeight();
 
             FrameStats stats = FrameStats.compute(safeBitmap);
             log("FRAME_STATS ts=" + System.currentTimeMillis()

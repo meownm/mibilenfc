@@ -28,6 +28,7 @@ import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
 import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
 import com.example.emrtdreader.sdk.ocr.OcrEngine;
+import com.example.emrtdreader.sdk.ocr.PreprocessParamStore;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -332,6 +333,100 @@ public class MrzImageAnalyzerTest {
         assertTrue(immutableSeen.get());
         verify(listener).onOcr(any(), any(), any());
         assertTrue(closed.get());
+    }
+
+    @Test
+    public void analyzeUsesRotatedFrameDimensionsForAutoDualRotation90() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        context.getSharedPreferences(PreprocessParamStore.PREF_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .commit();
+        String cameraId = "rot90";
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        int width = 160;
+        int height = 240;
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        "",
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.TESSERACT
+                )),
+                DualOcrRunner.Mode.AUTO_DUAL,
+                0,
+                cameraId,
+                listener,
+                createTestConverter(createMrzSampleBitmapVerticalBand(width, height, true))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), width, height, 90));
+
+        assertTrue(ocrLatch.await(3, TimeUnit.SECONDS));
+
+        PreprocessParamStore store = new PreprocessParamStore(context);
+        assertTrue(store.load(cameraId, height, width) != null);
+        assertTrue(store.load(cameraId, width, height) == null);
+    }
+
+    @Test
+    public void analyzeUsesRotatedFrameDimensionsForAutoDualRotation270() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        context.getSharedPreferences(PreprocessParamStore.PREF_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .commit();
+        String cameraId = "rot270";
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        int width = 160;
+        int height = 240;
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        "",
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.TESSERACT
+                )),
+                DualOcrRunner.Mode.AUTO_DUAL,
+                0,
+                cameraId,
+                listener,
+                createTestConverter(createMrzSampleBitmapVerticalBand(width, height, false))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), width, height, 270));
+
+        assertTrue(ocrLatch.await(3, TimeUnit.SECONDS));
+
+        PreprocessParamStore store = new PreprocessParamStore(context);
+        assertTrue(store.load(cameraId, height, width) != null);
+        assertTrue(store.load(cameraId, width, height) == null);
     }
 
     @Test
@@ -848,6 +943,20 @@ public class MrzImageAnalyzerTest {
         for (int x = 0; x < width; x += 6) {
             paint.setColor((x / 6) % 2 == 0 ? Color.BLACK : Color.DKGRAY);
             canvas.drawRect(x, bandTop, x + 3, bandBottom, paint);
+        }
+        return bitmap;
+    }
+
+    private static Bitmap createMrzSampleBitmapVerticalBand(int width, int height, boolean rightBand) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.drawColor(Color.WHITE);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int bandLeft = rightBand ? (int) (width * 0.7f) : (int) (width * 0.1f);
+        int bandRight = rightBand ? (int) (width * 0.9f) : (int) (width * 0.3f);
+        for (int y = 0; y < height; y += 6) {
+            paint.setColor((y / 6) % 2 == 0 ? Color.BLACK : Color.DKGRAY);
+            canvas.drawRect(bandLeft, y, bandRight, y + 3, paint);
         }
         return bitmap;
     }
