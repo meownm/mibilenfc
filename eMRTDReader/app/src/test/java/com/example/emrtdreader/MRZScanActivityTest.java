@@ -10,10 +10,13 @@ import android.content.Intent;
 import android.graphics.Rect;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 
 import com.example.emrtdreader.sdk.domain.AccessKey;
 import com.example.emrtdreader.sdk.models.MrzFormat;
 import com.example.emrtdreader.sdk.models.MrzResult;
+import com.example.emrtdreader.sdk.models.OcrMetrics;
+import com.example.emrtdreader.sdk.models.OcrResult;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -113,5 +116,68 @@ public class MRZScanActivityTest {
         assertEquals("740812", key.dateOfBirthYYMMDD);
         assertEquals("120415", key.dateOfExpiryYYMMDD);
         assertTrue(next.hasExtra("mrz"));
+    }
+
+    @Test
+    public void onOcrShowsStatusWhenMrzMissing() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        OcrResult ocr = new OcrResult(
+                "LINE1\nLINE2\nLINE3",
+                120,
+                new OcrMetrics(10.0, 20.0, 30.0)
+        );
+
+        activity.onOcr(ocr, null, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView mrzTextView = activity.findViewById(R.id.mrzTextView);
+        String text = mrzTextView.getText().toString();
+        assertTrue(text.contains("MRZ not detected yet"));
+        assertTrue(text.contains("OCR running..."));
+        assertTrue(text.contains("LINE1"));
+        assertTrue(text.contains("LINE2"));
+        assertTrue(!text.contains("LINE3"));
+    }
+
+    @Test
+    public void onOcrShowsMrzWhenAvailable() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        MrzResult mrz = new MrzResult(
+                "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+                "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+                null,
+                MrzFormat.TD3,
+                4
+        );
+        OcrResult ocr = new OcrResult(
+                "RAW\nTEXT",
+                80,
+                new OcrMetrics(10.0, 20.0, 30.0)
+        );
+
+        activity.onOcr(ocr, mrz, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView mrzTextView = activity.findViewById(R.id.mrzTextView);
+        assertEquals(mrz.asMrzText(), mrzTextView.getText().toString());
+    }
+
+    @Test
+    public void onOcrShowsCameraStatusWhenOcrMissing() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        activity.onOcr(null, null, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView mrzTextView = activity.findViewById(R.id.mrzTextView);
+        assertEquals("Camera not delivering frames", mrzTextView.getText().toString());
     }
 }
