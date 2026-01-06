@@ -5,6 +5,8 @@ import static org.junit.Assert.assertNotNull;
 
 import android.Manifest;
 import android.view.View;
+import android.widget.ScrollView;
+import android.widget.TextView;
 
 import androidx.camera.view.PreviewView;
 
@@ -42,5 +44,17 @@ public class CameraUiIntegrationTest {
     public void appCanReferenceSdkAnalyzerAlongsideUiDependencies() {
         assertNotNull(MrzImageAnalyzer.class);
         assertNotNull(PreviewView.class);
+    }
+
+    @Test
+    public void mrzScanActivityProvidesScrollableLogView() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        ScrollView scrollView = activity.findViewById(R.id.logScrollView);
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+
+        assertNotNull(scrollView);
+        assertNotNull(logTextView);
     }
 }
