@@ -212,6 +212,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         sb.append("OCR mode: ").append(mode.name()).append("\n");
         if (latestOcr != null) {
             sb.append("OCR elapsed: ").append(latestOcr.elapsedMs).append("ms\n");
+            sb.append("OCR source: ").append(latestOcr.engine.name()).append("\n");
             sb.append("Brightness: ").append(String.format("%.1f", latestOcr.metrics.brightness)).append("\n");
             sb.append("Contrast: ").append(String.format("%.1f", latestOcr.metrics.contrast)).append("\n");
             sb.append("Sharpness: ").append(String.format("%.1f", latestOcr.metrics.sharpness)).append("\n");
@@ -275,6 +276,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
                 metricsTextView.setText(
                         "Mode: " + mode.name() +
                         " | " + ocr.elapsedMs + "ms" +
+                        " | source " + ocr.engine.name() +
                         " | brightness " + String.format("%.0f", ocr.metrics.brightness) +
                         " | contrast " + String.format("%.0f", ocr.metrics.contrast) +
                         " | sharpness " + String.format("%.0f", ocr.metrics.sharpness)

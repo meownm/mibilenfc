@@ -34,11 +34,11 @@ public class OcrRouterTest {
     private static final String TD3_VALID_RAW = TD3_LINE1 + "\n" + TD3_LINE2;
 
     @Test
-    public void usesMlKitWhenValid() throws InterruptedException {
+    public void usesMlKitWhenNonEmpty() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
         OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
-                TD3_VALID_RAW,
+                "INVALID",
                 12,
                 new OcrMetrics(0, 0, 0),
                 OcrResult.Engine.ML_KIT
@@ -70,18 +70,18 @@ public class OcrRouterTest {
         assertNull(errorRef.get());
         assertNotNull(resultRef.get());
         assertEquals(OcrResult.Engine.ML_KIT, resultRef.get().engine);
-        assertEquals(TD3_VALID_RAW, resultRef.get().finalText);
-        assertEquals(TD3_VALID_RAW, resultRef.get().mlText);
+        assertEquals("INVALID", resultRef.get().finalText);
+        assertEquals("INVALID", resultRef.get().mlText);
         assertTrue(!tessCalled.get());
-        assertNotNull(mrzRef.get());
+        assertNull(mrzRef.get());
     }
 
     @Test
-    public void fallsBackToTesseractWhenInvalid() throws InterruptedException {
+    public void fallsBackToTesseractWhenMlEmpty() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
         OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
-                "INVALID",
+                "",
                 6,
                 new OcrMetrics(0, 0, 0),
                 OcrResult.Engine.ML_KIT
@@ -115,7 +115,7 @@ public class OcrRouterTest {
         assertTrue(tessCalled.get());
         assertEquals(OcrResult.Engine.TESSERACT, resultRef.get().engine);
         assertEquals(TD3_VALID_RAW, resultRef.get().finalText);
-        assertEquals("INVALID", resultRef.get().mlText);
+        assertEquals("", resultRef.get().mlText);
         assertEquals(TD3_VALID_RAW, resultRef.get().tessText);
         assertNotNull(mrzRef.get());
     }
@@ -125,7 +125,7 @@ public class OcrRouterTest {
         Context context = ApplicationProvider.getApplicationContext();
         Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
         OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
-                "INVALID",
+                "",
                 6,
                 new OcrMetrics(0, 0, 0),
                 OcrResult.Engine.ML_KIT
@@ -157,7 +157,7 @@ public class OcrRouterTest {
         Context context = ApplicationProvider.getApplicationContext();
         Bitmap bitmap = createGradientBitmap(8, 8);
         CapturingOcrEngine mlKit = new CapturingOcrEngine(new OcrResult(
-                "INVALID",
+                "",
                 6,
                 new OcrMetrics(0, 0, 0),
                 OcrResult.Engine.ML_KIT
@@ -201,6 +201,50 @@ public class OcrRouterTest {
             assertTrue("Tesseract input should be scaled up", candidate.getWidth() > mlBitmap.getWidth());
         }
         assertEquals(PreprocessParamSet.getCandidates().size(), tess.capturedBitmaps.size());
+    }
+
+    @Test
+    public void boostsConfidenceForValidTesseractMrz() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
+        OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
+                "",
+                6,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.ML_KIT
+        ));
+
+        String weakenedLine2 = TD3_LINE2.substring(0, 9) + "0" + TD3_LINE2.substring(10);
+        String tessRaw = TD3_LINE1 + "\n" + weakenedLine2;
+        OcrEngine tess = new FixedOcrEngine(new OcrResult(
+                tessRaw,
+                8,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.TESSERACT
+        ));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<MrzResult> mrzRef = new AtomicReference<>();
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+
+        OcrRouter.runAsync(context, mlKit, tess, bitmap, 0, new OcrRouter.Callback() {
+            @Override
+            public void onSuccess(OcrRouter.Result result, MrzResult mrz) {
+                mrzRef.set(mrz);
+                latch.countDown();
+            }
+
+            @Override
+            public void onFailure(Throwable error) {
+                errorRef.set(error);
+                latch.countDown();
+            }
+        });
+
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        assertNull(errorRef.get());
+        assertNotNull(mrzRef.get());
+        assertEquals(4, mrzRef.get().confidence);
     }
 
     private static final class FixedOcrEngine implements OcrEngine {

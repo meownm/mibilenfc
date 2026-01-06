@@ -1,6 +1,7 @@
 package com.example.emrtdreader.sdk.ocr;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -19,34 +20,26 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
-public class OcrRouterCandidateLoopIntegrationTest {
-    private static final String TD3_LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
-    private static final String TD3_LINE2 = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
-    private static final String TD3_VALID_RAW = TD3_LINE1 + "\n" + TD3_LINE2;
-
+public class OcrRouterSwitchIntegrationTest {
     @Test
-    public void runsCandidateLoopAndSelectsBestText() throws InterruptedException {
+    public void usesMlResultWithoutInvokingTesseract() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
-
         OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
-                "",
-                5,
+                "ML_TEXT",
+                9,
                 new OcrMetrics(0, 0, 0),
                 OcrResult.Engine.ML_KIT
         ));
-
-        List<String> tessTexts = buildCandidateTexts();
-        SequencedOcrEngine tess = new SequencedOcrEngine(tessTexts, OcrResult.Engine.TESSERACT);
+        AtomicBoolean tessCalled = new AtomicBoolean(false);
+        OcrEngine tess = new FlagOcrEngine(tessCalled);
 
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<OcrRouter.Result> resultRef = new AtomicReference<>();
@@ -71,22 +64,10 @@ public class OcrRouterCandidateLoopIntegrationTest {
         assertTrue(latch.await(2, TimeUnit.SECONDS));
         assertNull(errorRef.get());
         assertNotNull(resultRef.get());
-        assertEquals(OcrResult.Engine.TESSERACT, resultRef.get().engine);
-        assertEquals(TD3_VALID_RAW, resultRef.get().finalText);
-        assertEquals(PreprocessParamSet.getCandidates().size(), tess.callCount.get());
-        assertNotNull(mrzRef.get());
-    }
-
-    private static List<String> buildCandidateTexts() {
-        int size = PreprocessParamSet.getCandidates().size();
-        List<String> texts = new ArrayList<>(size);
-        for (int i = 0; i < size; i++) {
-            texts.add("INVALID" + i);
-        }
-        if (size > 0) {
-            texts.set(size / 2, TD3_VALID_RAW);
-        }
-        return texts;
+        assertEquals(OcrResult.Engine.ML_KIT, resultRef.get().engine);
+        assertEquals("ML_TEXT", resultRef.get().finalText);
+        assertFalse(tessCalled.get());
+        assertNull(mrzRef.get());
     }
 
     private static final class FixedOcrEngine implements OcrEngine {
@@ -116,19 +97,16 @@ public class OcrRouterCandidateLoopIntegrationTest {
         }
     }
 
-    private static final class SequencedOcrEngine implements OcrEngine {
-        private final List<String> texts;
-        private final OcrResult.Engine engine;
-        private final AtomicInteger callCount = new AtomicInteger(0);
+    private static final class FlagOcrEngine implements OcrEngine {
+        private final AtomicBoolean called;
 
-        private SequencedOcrEngine(List<String> texts, OcrResult.Engine engine) {
-            this.texts = texts;
-            this.engine = engine;
+        private FlagOcrEngine(AtomicBoolean called) {
+            this.called = called;
         }
 
         @Override
         public String getName() {
-            return "sequence";
+            return "flag";
         }
 
         @Override
@@ -138,9 +116,8 @@ public class OcrRouterCandidateLoopIntegrationTest {
 
         @Override
         public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
-            int index = callCount.getAndIncrement();
-            String text = index < texts.size() ? texts.get(index) : "";
-            callback.onSuccess(new OcrResult(text, 5, new OcrMetrics(0, 0, 0), engine));
+            called.set(true);
+            callback.onSuccess(new OcrResult("", 5, new OcrMetrics(0, 0, 0), OcrResult.Engine.TESSERACT));
         }
 
         @Override

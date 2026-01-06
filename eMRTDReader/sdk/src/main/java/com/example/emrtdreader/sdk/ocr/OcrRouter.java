@@ -2,6 +2,7 @@ package com.example.emrtdreader.sdk.ocr;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.util.Log;
 
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
@@ -13,6 +14,8 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class OcrRouter {
+    private static final String TAG = "OcrRouter";
+
     public interface Callback {
         void onSuccess(Result result, MrzResult mrz);
         void onFailure(Throwable error);
@@ -73,7 +76,7 @@ public final class OcrRouter {
 
         PREPROCESS_EXECUTOR.execute(() -> {
             try {
-                Bitmap mlInput = MrzPreprocessor.preprocessForMl(roi);
+                Bitmap mlInput = MrzPreprocessor.preprocessForMlMinimal(roi);
                 OcrMetrics frameMetrics = OcrQuality.compute(roi);
                 runMlThenMaybeTess(ctx, mlKit, tess, roi, mlInput, rotationDeg, frameMetrics,
                         cameraId, frameWidth, frameHeight, callback);
@@ -98,8 +101,7 @@ public final class OcrRouter {
             @Override
             public void onSuccess(OcrResult result) {
                 String mlText = result != null ? result.rawText : "";
-                double mlScore = MrzScore.score(mlText);
-                if (mlScore >= 1.0) {
+                if (hasText(mlText)) {
                     publishResult(result != null ? result.engine : OcrResult.Engine.ML_KIT,
                             mlText,
                             "",
@@ -107,10 +109,10 @@ public final class OcrRouter {
                             frameMetrics,
                             result != null ? result.elapsedMs : 0L,
                             callback);
-                    return;
+                } else {
+                    runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, result, mlText,
+                            cameraId, frameWidth, frameHeight, callback);
                 }
-                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, result, mlText,
-                        cameraId, frameWidth, frameHeight, callback);
             }
 
             @Override
@@ -160,17 +162,6 @@ public final class OcrRouter {
                 if (index >= candidates.size()) {
                     int bestIndex = PreprocessParamSelection.pickBestIndex(texts);
                     if (bestIndex < 0) {
-                        CandidateSelection selection = pickBestCandidate(mlResult, null, mlText, "");
-                        if (selection.finalText != null && !selection.finalText.isEmpty()) {
-                            publishResult(selection.engine,
-                                    mlText,
-                                    "",
-                                    selection.finalText,
-                                    frameMetrics,
-                                    selection.elapsedMs,
-                                    callback);
-                            return;
-                        }
                         Throwable error = lastError.get();
                         callback.onFailure(error != null ? error : new IllegalStateException("OCR failed"));
                         return;
@@ -179,13 +170,12 @@ public final class OcrRouter {
                     store.save(cameraId, frameWidth, frameHeight, bestParams);
                     OcrResult bestResult = results.get(bestIndex);
                     String tessText = texts.get(bestIndex);
-                    CandidateSelection selection = pickBestCandidate(mlResult, bestResult, mlText, tessText);
-                    publishResult(selection.engine,
+                    publishResult(OcrResult.Engine.TESSERACT,
                             mlText,
                             tessText,
-                            selection.finalText,
+                            tessText,
                             frameMetrics,
-                            selection.elapsedMs,
+                            elapsedOrZero(bestResult),
                             callback);
                     return;
                 }
@@ -237,6 +227,12 @@ public final class OcrRouter {
                                       Callback callback) {
         Result result = new Result(engine, mlText, tessText, finalText, frameMetrics, elapsedMs);
         MrzResult mrz = MrzTextProcessor.normalizeAndRepair(finalText);
+        if (engine == OcrResult.Engine.TESSERACT) {
+            mrz = boostConfidenceIfValid(mrz);
+        }
+        Log.d(TAG, "OCR routed source=" + engine.name()
+                + " mlLen=" + safeLength(mlText)
+                + " tessLen=" + safeLength(tessText));
         callback.onSuccess(result, mrz);
     }
 
@@ -271,54 +267,30 @@ public final class OcrRouter {
         void onFailure(Throwable error);
     }
 
-    static CandidateSelection pickBestCandidate(OcrResult mlResult,
-                                                OcrResult tessResult,
-                                                String mlText,
-                                                String tessText) {
-        double mlScore = MrzScore.score(mlText);
-        double tessScore = MrzScore.score(tessText);
-        boolean hasMlText = mlText != null && !mlText.isEmpty();
-        boolean hasTessText = tessText != null && !tessText.isEmpty();
-
-        if (!hasMlText && !hasTessText) {
-            return new CandidateSelection(OcrResult.Engine.UNKNOWN, "", 0L, 0.0);
-        }
-        if (!hasTessText) {
-            return new CandidateSelection(engineOrDefault(mlResult, OcrResult.Engine.ML_KIT), mlText,
-                    elapsedOrZero(mlResult), mlScore);
-        }
-        if (!hasMlText) {
-            return new CandidateSelection(engineOrDefault(tessResult, OcrResult.Engine.TESSERACT), tessText,
-                    elapsedOrZero(tessResult), tessScore);
-        }
-        if (tessScore > mlScore) {
-            return new CandidateSelection(engineOrDefault(tessResult, OcrResult.Engine.TESSERACT), tessText,
-                    elapsedOrZero(tessResult), tessScore);
-        }
-        return new CandidateSelection(engineOrDefault(mlResult, OcrResult.Engine.ML_KIT), mlText,
-                elapsedOrZero(mlResult), mlScore);
-    }
-
-    private static OcrResult.Engine engineOrDefault(OcrResult result, OcrResult.Engine fallback) {
-        return result != null ? result.engine : fallback;
-    }
-
     private static long elapsedOrZero(OcrResult result) {
         return result != null ? result.elapsedMs : 0L;
     }
 
-    static final class CandidateSelection {
-        final OcrResult.Engine engine;
-        final String finalText;
-        final long elapsedMs;
-        final double score;
+    private static boolean hasText(String text) {
+        return text != null && !text.trim().isEmpty();
+    }
 
-        private CandidateSelection(OcrResult.Engine engine, String finalText, long elapsedMs, double score) {
-            this.engine = engine;
-            this.finalText = finalText;
-            this.elapsedMs = elapsedMs;
-            this.score = score;
+    private static MrzResult boostConfidenceIfValid(MrzResult mrz) {
+        if (mrz == null) {
+            return null;
         }
+        if (mrz.confidence < 3) {
+            return mrz;
+        }
+        int boosted = Math.min(4, mrz.confidence + 1);
+        if (boosted == mrz.confidence) {
+            return mrz;
+        }
+        return new MrzResult(mrz.line1, mrz.line2, mrz.line3, mrz.format, boosted);
+    }
+
+    private static int safeLength(String text) {
+        return text != null ? text.length() : 0;
     }
 
     private static final class NamedThreadFactory implements ThreadFactory {
