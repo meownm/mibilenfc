@@ -11,6 +11,8 @@ import android.graphics.Color;
 
 import androidx.test.core.app.ApplicationProvider;
 
+import com.example.emrtdreader.sdk.models.MrzFormat;
+import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
 
@@ -19,6 +21,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
+import java.lang.reflect.Method;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -299,6 +302,27 @@ public class DualOcrRunnerTest {
         assertTrue("Tesseract input should be scaled up", tessBitmap.getWidth() > mlBitmap.getWidth());
     }
 
+    @Test
+    public void pickBestPrefersTd3WhenConfidenceTies() throws Exception {
+        MrzResult td1 = new MrzResult("L1", "L2", "L3", MrzFormat.TD1, 2);
+        MrzResult td3 = new MrzResult("L1", "L2", null, MrzFormat.TD3, 2);
+
+        MrzResult result = invokePickBest(td1, td3);
+
+        assertEquals(MrzFormat.TD3, result.format);
+        assertEquals(td3, result);
+    }
+
+    @Test
+    public void pickBestReturnsFirstWhenConfidenceAndFormatMatch() throws Exception {
+        MrzResult first = new MrzResult("L1", "L2", "L3", MrzFormat.TD1, 3);
+        MrzResult second = new MrzResult("L1", "L2", "L3", MrzFormat.TD1, 3);
+
+        MrzResult result = invokePickBest(first, second);
+
+        assertEquals(first, result);
+    }
+
     private static Bitmap createGradientBitmap(int width, int height) {
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         for (int y = 0; y < height; y++) {
@@ -339,6 +363,12 @@ public class DualOcrRunnerTest {
             }
         }
         return false;
+    }
+
+    private static MrzResult invokePickBest(MrzResult a, MrzResult b) throws Exception {
+        Method method = DualOcrRunner.class.getDeclaredMethod("pickBest", MrzResult.class, MrzResult.class);
+        method.setAccessible(true);
+        return (MrzResult) method.invoke(null, a, b);
     }
 
     private static final class FakeOcrEngine implements OcrEngine {
