@@ -46,6 +46,7 @@ APK output:
 - Many passports store face photo as JPEG2000. Android `BitmapFactory` can't decode it; in that case the app shows a placeholder.
 - Passive Authentication uses JMRTD `SODFile` to read the digest algorithm and data group hashes from the SOD payload.
 - Passive Authentication result is **UNKNOWN_CA** when signature and hashes are valid, because CSCA trust store is not bundled.
+- MRZ scan and NFC screens include a scrollable log panel that appends OCR/MRZ/NFC session events and passive authentication results.
 
 ## Testing
 Run the SDK unit test suite (includes MRZ parsing coverage):

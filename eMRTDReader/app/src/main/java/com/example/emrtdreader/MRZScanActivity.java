@@ -20,6 +20,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -61,6 +62,8 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     private Spinner ocrSpinner;
     private TextView mrzTextView;
     private TextView metricsTextView;
+    private ScrollView logScrollView;
+    private TextView logTextView;
     private Button logCopyButton;
     private Button manualButton;
     private Button continueButton;
@@ -96,6 +99,8 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         ocrSpinner = findViewById(R.id.ocrSpinner);
         mrzTextView = findViewById(R.id.mrzTextView);
         metricsTextView = findViewById(R.id.metricsTextView);
+        logScrollView = findViewById(R.id.logScrollView);
+        logTextView = findViewById(R.id.logTextView);
         logCopyButton = findViewById(R.id.logCopyButton);
         manualButton = findViewById(R.id.manualButton);
         continueButton = findViewById(R.id.continueButton);
@@ -187,6 +192,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         Intent i = new Intent(this, NFCReadActivity.class);
         i.putExtra("accessKey", key);
         i.putExtra("mrz", mrz);
+        appendLogLine("NFC: launching read flow");
         startActivity(i);
     }
 
@@ -247,6 +253,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
             updateOverlayColor(resolveOverlayColor(ocr, bestSingle, false));
             if (bestSingle != null) {
                 mrzTextView.setText(bestSingle.asMrzText());
+                appendLogLine("MRZ candidate (score " + bestSingle.confidence + "):\n" + bestSingle.asMrzText());
             } else if (ocr != null) {
                 String preview = buildOcrPreview(ocr.rawText);
                 StringBuilder status = new StringBuilder("MRZ not detected yet\nOCR running...");
@@ -258,6 +265,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
                 mrzTextView.setText("Camera not delivering frames");
             }
             if (ocr != null) {
+                appendLogLine(buildOcrLogLine(ocr));
                 metricsTextView.setText(
                         "Mode: " + mode.name() +
                         " | " + ocr.elapsedMs + "ms" +
@@ -302,6 +310,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         runOnUiThread(() -> {
             updateOverlayColor(ContextCompat.getColor(this, R.color.overlay_mrz_green));
             mrzTextView.setText(finalMrz.asMrzText());
+            appendLogLine("MRZ locked (burst):\n" + finalMrz.asMrzText());
             Toast.makeText(this, "MRZ locked (burst)", Toast.LENGTH_SHORT).show();
         });
     }
@@ -311,6 +320,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         runOnUiThread(() -> {
             updateOverlayColor(ContextCompat.getColor(this, R.color.overlay_error_red));
             mrzTextView.setText("Analyzer error: " + message);
+            appendLogLine("Analyzer error: " + message);
             Toast.makeText(this, "Analyzer error: " + message, Toast.LENGTH_LONG).show();
         });
     }
@@ -402,5 +412,28 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
 
     private long getOverlayAnimationDuration() {
         return "robolectric".equalsIgnoreCase(Build.FINGERPRINT) ? 0L : OVERLAY_ANIMATION_MS;
+    }
+
+    private String buildOcrLogLine(OcrResult ocr) {
+        return "OCR (" + ocr.engine.name() + ") " + ocr.elapsedMs + "ms"
+                + " | brightness " + String.format("%.0f", ocr.metrics.brightness)
+                + " | contrast " + String.format("%.0f", ocr.metrics.contrast)
+                + " | sharpness " + String.format("%.0f", ocr.metrics.sharpness);
+    }
+
+    private void appendLogLine(String line) {
+        if (logTextView == null) {
+            return;
+        }
+        CharSequence existing = logTextView.getText();
+        StringBuilder builder = new StringBuilder();
+        if (existing != null && existing.length() > 0) {
+            builder.append(existing).append("\n");
+        }
+        builder.append(line);
+        logTextView.setText(builder.toString());
+        if (logScrollView != null) {
+            logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN));
+        }
     }
 }

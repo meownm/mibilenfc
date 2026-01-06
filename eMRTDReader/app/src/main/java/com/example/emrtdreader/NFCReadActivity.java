@@ -6,6 +6,7 @@ import android.nfc.Tag;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -22,6 +23,8 @@ public class NFCReadActivity extends AppCompatActivity {
     private TextView status;
     private EditText canEdit;
     private Button readButton;
+    private ScrollView logScrollView;
+    private TextView logTextView;
 
     private AccessKey.Mrz accessKey;
     private NfcAdapter nfcAdapter;
@@ -36,6 +39,8 @@ public class NFCReadActivity extends AppCompatActivity {
         status = findViewById(R.id.statusTextView);
         canEdit = findViewById(R.id.canEditText);
         readButton = findViewById(R.id.readNfcButton);
+        logScrollView = findViewById(R.id.nfcLogScrollView);
+        logTextView = findViewById(R.id.nfcLogTextView);
 
         accessKey = (AccessKey.Mrz) getIntent().getSerializableExtra("accessKey");
 
@@ -44,6 +49,7 @@ public class NFCReadActivity extends AppCompatActivity {
         readButton.setOnClickListener(v -> {
             armed = true;
             status.setText("Tap document to NFC...");
+            appendLogLine("NFC: waiting for document tap");
         });
     }
 
@@ -73,6 +79,8 @@ public class NFCReadActivity extends AppCompatActivity {
 
         String can = canEdit.getText().toString().trim();
         runOnUiThread(() -> status.setText("Reading NFC..."));
+        appendLogLine("NFC: tag discovered");
+        appendLogLine("NFC: starting read");
 
         exec.execute(() -> {
             try {
@@ -84,9 +92,12 @@ public class NFCReadActivity extends AppCompatActivity {
                 startActivity(i);
 
                 runOnUiThread(() -> status.setText("Done"));
+                appendLogLine("NFC: read complete");
+                appendLogLine(formatPassiveAuthResult(result));
 
             } catch (Throwable e) {
                 runOnUiThread(() -> status.setText("Error: " + e.getMessage()));
+                appendLogLine("NFC: error " + e.getMessage());
             }
         });
     }
@@ -95,5 +106,31 @@ public class NFCReadActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         exec.shutdownNow();
+    }
+
+    private void appendLogLine(String line) {
+        runOnUiThread(() -> {
+            CharSequence existing = logTextView.getText();
+            StringBuilder builder = new StringBuilder();
+            if (existing != null && existing.length() > 0) {
+                builder.append(existing).append("\n");
+            }
+            builder.append(line);
+            logTextView.setText(builder.toString());
+            if (logScrollView != null) {
+                logScrollView.post(() -> logScrollView.fullScroll(android.view.View.FOCUS_DOWN));
+            }
+        });
+    }
+
+    String formatPassiveAuthResult(PassportReadResult result) {
+        if (result == null || result.verification == null) {
+            return "Passive auth: unavailable";
+        }
+        return "Passive auth:"
+                + " signature=" + result.verification.sodSignatureValid
+                + " hashes=" + result.verification.dgHashesMatch
+                + " cscaTrusted=" + result.verification.cscaTrusted
+                + " details=" + result.verification.details;
     }
 }

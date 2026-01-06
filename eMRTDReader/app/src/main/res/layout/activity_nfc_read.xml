@@ -40,4 +40,19 @@
         android:text="Idle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"/>
+
+    <ScrollView
+        android:id="@+id/nfcLogScrollView"
+        android:layout_marginTop="12dp"
+        android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:fillViewport="true">
+
+        <TextView
+            android:id="@+id/nfcLogTextView"
+            android:text=""
+            android:textIsSelectable="true"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+    </ScrollView>
 </LinearLayout>

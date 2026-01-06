@@ -187,6 +187,51 @@ public class MRZScanActivityTest {
     }
 
     @Test
+    public void logAppendsOcrAndMrzEntries() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        OcrResult ocr = new OcrResult(
+                "LINE1\nLINE2",
+                120,
+                new OcrMetrics(10.0, 20.0, 30.0),
+                OcrResult.Engine.ML_KIT
+        );
+
+        MrzResult mrz = new MrzResult(
+                "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+                "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+                null,
+                MrzFormat.TD3,
+                4
+        );
+
+        activity.onOcr(ocr, mrz, new Rect(0, 0, 10, 10));
+        activity.onFinalMrz(mrz, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        String logText = logTextView.getText().toString();
+        assertTrue(logText.contains("OCR (ML_KIT) 120ms"));
+        assertTrue(logText.contains("MRZ locked (burst):"));
+        assertTrue(logText.contains(mrz.asMrzText()));
+    }
+
+    @Test
+    public void logDoesNotAppendWhenOcrMissing() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        activity.onOcr(null, null, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        assertEquals("", logTextView.getText().toString());
+    }
+
+    @Test
     public void onAnalyzerErrorShowsToastAndStatus() {
         ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
         ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
