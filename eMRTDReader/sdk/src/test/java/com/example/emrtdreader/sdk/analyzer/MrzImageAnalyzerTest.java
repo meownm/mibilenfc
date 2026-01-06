@@ -15,6 +15,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.ImageFormat;
 import android.media.Image;
 
 import androidx.camera.core.ImageInfo;
@@ -34,6 +35,7 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowLog;
 
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -589,6 +591,48 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
+    public void analyzeUsesDefaultConverterWithYuvImageProxy() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
+                TD3_MRZ,
+                1,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.ML_KIT
+        ));
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener
+        );
+
+        int width = 320;
+        int height = 240;
+        byte[] yPlane = createMrzLumaPlane(width, height);
+        byte[] uPlane = createChromaPlane(width, height, (byte) 128);
+        byte[] vPlane = createChromaPlane(width, height, (byte) 128);
+
+        AtomicBoolean closed = new AtomicBoolean(false);
+        ImageProxy imageProxy = createYuvImageProxy(closed, width, height, yPlane, uPlane, vPlane);
+
+        analyzer.analyze(imageProxy);
+
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+        verify(listener).onOcr(any(), any(), any());
+        assertTrue(closed.get());
+    }
+
+    @Test
     public void analyzeDoesNotBlockWhileOcrRunsAsync() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         CountDownLatch startLatch = new CountDownLatch(1);
@@ -642,6 +686,50 @@ public class MrzImageAnalyzerTest {
         when(imageProxy.getWidth()).thenReturn(width);
         when(imageProxy.getHeight()).thenReturn(height);
         when(imageProxy.getImage()).thenReturn(mock(Image.class));
+        doAnswer(invocation -> {
+            closedFlag.set(true);
+            return null;
+        }).when(imageProxy).close();
+
+        return imageProxy;
+    }
+
+    private static ImageProxy createYuvImageProxy(AtomicBoolean closedFlag,
+                                                  int width,
+                                                  int height,
+                                                  byte[] yPlane,
+                                                  byte[] uPlane,
+                                                  byte[] vPlane) {
+        Image image = mock(Image.class);
+        when(image.getWidth()).thenReturn(width);
+        when(image.getHeight()).thenReturn(height);
+        when(image.getFormat()).thenReturn(ImageFormat.YUV_420_888);
+
+        Image.Plane y = mock(Image.Plane.class);
+        when(y.getBuffer()).thenReturn(ByteBuffer.wrap(yPlane));
+        when(y.getRowStride()).thenReturn(width);
+        when(y.getPixelStride()).thenReturn(1);
+
+        int chromaRowStride = width / 2;
+        Image.Plane u = mock(Image.Plane.class);
+        when(u.getBuffer()).thenReturn(ByteBuffer.wrap(uPlane));
+        when(u.getRowStride()).thenReturn(chromaRowStride);
+        when(u.getPixelStride()).thenReturn(1);
+
+        Image.Plane v = mock(Image.Plane.class);
+        when(v.getBuffer()).thenReturn(ByteBuffer.wrap(vPlane));
+        when(v.getRowStride()).thenReturn(chromaRowStride);
+        when(v.getPixelStride()).thenReturn(1);
+
+        when(image.getPlanes()).thenReturn(new Image.Plane[]{y, u, v});
+
+        ImageProxy imageProxy = mock(ImageProxy.class);
+        ImageInfo imageInfo = mock(ImageInfo.class);
+        when(imageProxy.getImageInfo()).thenReturn(imageInfo);
+        when(imageInfo.getRotationDegrees()).thenReturn(0);
+        when(imageProxy.getWidth()).thenReturn(width);
+        when(imageProxy.getHeight()).thenReturn(height);
+        when(imageProxy.getImage()).thenReturn(image);
         doAnswer(invocation -> {
             closedFlag.set(true);
             return null;
@@ -706,6 +794,34 @@ public class MrzImageAnalyzerTest {
             canvas.drawRect(x, bandTop, x + 3, bandBottom, paint);
         }
         return bitmap;
+    }
+
+    private static byte[] createMrzLumaPlane(int width, int height) {
+        byte[] luma = new byte[width * height];
+        int bandTop = (int) (height * 0.7f);
+        int bandBottom = (int) (height * 0.9f);
+        for (int y = 0; y < height; y++) {
+            boolean inBand = y >= bandTop && y < bandBottom;
+            for (int x = 0; x < width; x++) {
+                int value;
+                if (inBand) {
+                    value = ((x / 6) % 2 == 0) ? 30 : 230;
+                } else {
+                    value = 200;
+                }
+                luma[y * width + x] = (byte) (value & 0xFF);
+            }
+        }
+        return luma;
+    }
+
+    private static byte[] createChromaPlane(int width, int height, byte value) {
+        int chromaSize = (width / 2) * (height / 2);
+        byte[] plane = new byte[chromaSize];
+        for (int i = 0; i < chromaSize; i++) {
+            plane[i] = value;
+        }
+        return plane;
     }
 
     private static class FlagOcrEngine implements OcrEngine {

@@ -2,20 +2,25 @@ package com.example.emrtdreader.sdk.analyzer;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.YuvImage;
 import android.media.Image;
+import android.graphics.ImageFormat;
 
 import androidx.camera.core.ImageProxy;
-import androidx.camera.core.internal.YuvToRgbConverter;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
 
 /**
- * Converts {@link ImageProxy} YUV frames to mutable ARGB bitmaps using CameraX's
- * {@link androidx.camera.core.internal.YuvToRgbConverter}, then normalizes brightness to keep
- * text readable for MRZ detection and OCR.
+ * Converts {@link ImageProxy} YUV frames to mutable ARGB bitmaps using public YUV APIs,
+ * then normalizes brightness to keep text readable for MRZ detection and OCR.
  */
 final class YuvBitmapConverter {
     static final int MIN_AVG_LUMA = 70;
@@ -32,8 +37,7 @@ final class YuvBitmapConverter {
     }
 
     YuvBitmapConverter(Context context) {
-        YuvToRgbConverter yuvConverter = new YuvToRgbConverter(context);
-        this.converter = yuvConverter::yuvToRgb;
+        this.converter = new Yuv420888Converter();
     }
 
     Bitmap toBitmap(ImageProxy imageProxy) {
@@ -103,5 +107,63 @@ final class YuvBitmapConverter {
         bitmap.eraseColor(Color.TRANSPARENT);
         Canvas out = new Canvas(bitmap);
         out.drawBitmap(adjusted, 0, 0, null);
+    }
+
+    private static final class Yuv420888Converter implements Converter {
+        @Override
+        public void yuvToRgb(Image image, Bitmap bitmap) {
+            if (image.getFormat() != ImageFormat.YUV_420_888) {
+                throw new IllegalArgumentException("Unsupported format: " + image.getFormat());
+            }
+            int width = image.getWidth();
+            int height = image.getHeight();
+            byte[] nv21 = yuv420888ToNv21(image, width, height);
+            YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            boolean success = yuvImage.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+            if (!success) {
+                throw new IllegalStateException("YUV to JPEG conversion failed");
+            }
+            byte[] jpeg = out.toByteArray();
+            Bitmap decoded = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
+            if (decoded == null) {
+                throw new IllegalStateException("Decoded bitmap was null");
+            }
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawBitmap(decoded, 0, 0, null);
+        }
+
+        private static byte[] yuv420888ToNv21(Image image, int width, int height) {
+            Image.Plane[] planes = image.getPlanes();
+            ByteBuffer yBuffer = planes[0].getBuffer().duplicate();
+            ByteBuffer uBuffer = planes[1].getBuffer().duplicate();
+            ByteBuffer vBuffer = planes[2].getBuffer().duplicate();
+
+            int yRowStride = planes[0].getRowStride();
+            int yPixelStride = planes[0].getPixelStride();
+            int uvRowStride = planes[1].getRowStride();
+            int uvPixelStride = planes[1].getPixelStride();
+
+            byte[] nv21 = new byte[width * height + (width * height) / 2];
+            int pos = 0;
+            for (int row = 0; row < height; row++) {
+                int rowOffset = row * yRowStride;
+                for (int col = 0; col < width; col++) {
+                    nv21[pos++] = yBuffer.get(rowOffset + col * yPixelStride);
+                }
+            }
+
+            int chromaHeight = height / 2;
+            int chromaWidth = width / 2;
+            for (int row = 0; row < chromaHeight; row++) {
+                int rowOffset = row * uvRowStride;
+                for (int col = 0; col < chromaWidth; col++) {
+                    int offset = rowOffset + col * uvPixelStride;
+                    nv21[pos++] = vBuffer.get(offset);
+                    nv21[pos++] = uBuffer.get(offset);
+                }
+            }
+            return nv21;
+        }
     }
 }

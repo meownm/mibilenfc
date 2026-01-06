@@ -22,9 +22,9 @@
 Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (from `com.example.emrtdreader.sdk.analysis.ScanState`) so UI layers can surface OCR progress, MRZ detection, and failures alongside the usual OCR and final MRZ callbacks.
 
 ## Analyzer lifecycle (CameraX)
-- Each `analyze` call converts the incoming `ImageProxy` to a mutable `ARGB_8888` bitmap using `androidx.camera.core.internal.YuvToRgbConverter` (no manual plane-buffer access or NV21/JPEG round-trips), then normalizes brightness into a readable range before copying to an immutable bitmap for safe downstream processing.
+- Each `analyze` call converts the incoming `ImageProxy` to a mutable `ARGB_8888` bitmap using a local YUV_420_888 converter (plane buffers -> NV21 -> `YuvImage`/`BitmapFactory`), then normalizes brightness into a readable range before copying to an immutable bitmap for safe downstream processing.
 - The analyzer always works on an immutable copy (`safeBitmap`) so rotation, MRZ detection, ROI cropping, and OCR remain safe even after the `ImageProxy` is closed asynchronously.
-- The converter path avoids manual plane buffer access and NV21/JPEG round-trips, preserving per-pixel fidelity while keeping the MRZ band legible in low-light or overexposed frames.
+- The converter path relies on public Android APIs and still keeps the MRZ band legible in low-light or overexposed frames.
 - The `ImageProxy` is closed right after the safe bitmap copy completes, before MRZ detection or OCR begins.
 - OCR is dispatched asynchronously via callbacks; the analyzer thread never blocks on OCR completion. Callbacks may arrive on background threads and should be treated as non-UI.
 - Any conversion failure or OCR processing exception triggers the analyzer error callback, emits `ScanState.ERROR`, and still closes the `ImageProxy` if it has not been closed yet.
