@@ -15,6 +15,8 @@
 8. MRZ normalization + checksum-guided repair (TD3/TD1)
 9. Burst aggregation -> final MRZ
 
+Listener callbacks from `MrzImageAnalyzer` now include an error signal that surfaces critical analyzer failures to UI layers (e.g., MRZ scan activity toast/status updates) alongside the usual OCR and final MRZ callbacks.
+
 ## NFC pipeline
 - Access key from MRZ (BAC) + PACE best-effort
 - Read DG1/DG2/SOD

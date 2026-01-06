@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.camera.core.ImageAnalysis;
@@ -36,6 +37,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     public interface Listener {
         void onOcr(OcrResult ocr, MrzResult bestSingle, Rect roi);
         void onFinalMrz(MrzResult finalMrz, Rect roi);
+        void onAnalyzerError(String message, Throwable error);
     }
 
     private final Context appContext;
@@ -79,7 +81,6 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
     @Override
     public void analyze(@NonNull ImageProxy image) {
-        int rotationDeg = image.getImageInfo().getRotationDegrees();
         if (finished.get()) {
             image.close();
             return;
@@ -92,6 +93,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         lastTs = now;
 
         try {
+            int rotationDeg = image.getImageInfo().getRotationDegrees();
             Bitmap frame = imageProxyToBitmap(image);
             if (frame == null) return;
 
@@ -118,7 +120,11 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                     if (listener != null) listener.onFinalMrz(finalMrz, stable);
                 }
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable e) {
+            Log.e("MRZ", "Analyzer error while processing frame", e);
+            if (listener != null) {
+                listener.onAnalyzerError("Analyzer error while processing frame", e);
+            }
         } finally {
             image.close();
         }

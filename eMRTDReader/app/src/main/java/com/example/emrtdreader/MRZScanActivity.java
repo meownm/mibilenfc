@@ -287,6 +287,14 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     }
 
     @Override
+    public void onAnalyzerError(String message, Throwable error) {
+        runOnUiThread(() -> {
+            mrzTextView.setText("Analyzer error: " + message);
+            Toast.makeText(this, "Analyzer error: " + message, Toast.LENGTH_LONG).show();
+        });
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         analysisExecutor.shutdownNow();
