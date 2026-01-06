@@ -37,4 +37,5 @@ APK output:
 
 ## Notes
 - Many passports store face photo as JPEG2000. Android `BitmapFactory` can't decode it; in that case the app shows a placeholder.
+- Passive Authentication uses JMRTD `SODFile` to read the digest algorithm and data group hashes from the SOD payload.
 - Passive Authentication result is **UNKNOWN_CA** when signature and hashes are valid, because CSCA trust store is not bundled.
