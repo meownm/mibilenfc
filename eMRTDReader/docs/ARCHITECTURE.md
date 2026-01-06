@@ -11,7 +11,7 @@
 4. Quality gate (sharpness)
 5. Preprocess (grayscale + contrast)
 6. Adaptive threshold (local) + fallback
-7. OCR (ML Kit / Tesseract / Dual)
+7. OCR (ML Kit / Tesseract / Dual, ML Kit + Tesseract run concurrently with timeout fallback)
 8. MRZ normalization + checksum-guided repair (TD3/TD1)
 9. Burst aggregation -> final MRZ
 
