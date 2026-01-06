@@ -10,6 +10,10 @@ dependencies {
 }
 ```
 
+## Namespaces
+- App module: `com.example.emrtdreader`
+- SDK module: `com.example.emrtdreader.sdk`
+
 ## Permissions
 - Camera: `android.permission.CAMERA`
 - NFC: `android.permission.NFC`

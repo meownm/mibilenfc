@@ -7,7 +7,7 @@ import android.Manifest;
 
 import androidx.camera.view.PreviewView;
 
-import com.example.emrtdreader.analyzer.MrzImageAnalyzer;
+import com.example.emrtdreader.sdk.analyzer.MrzImageAnalyzer;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;

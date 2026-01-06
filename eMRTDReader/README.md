@@ -13,6 +13,9 @@ Android app that reads eMRTD (ICAO 9303) documents using:
 - CameraX artifacts:
   - SDK uses only camera-core (and camera-camera2 if needed).
   - App module provides UI/lifecycle dependencies (camera-view, camera-lifecycle) via the CameraX BOM.
+- Module namespaces:
+  - App: `com.example.emrtdreader`
+  - SDK: `com.example.emrtdreader.sdk`
 
 ## Setup (Windows / PowerShell)
 1) Create `local.properties` in project root:

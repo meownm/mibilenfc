@@ -11,9 +11,9 @@ import android.graphics.Rect;
 import android.widget.Button;
 import android.widget.EditText;
 
-import com.example.emrtdreader.domain.AccessKey;
-import com.example.emrtdreader.models.MrzFormat;
-import com.example.emrtdreader.models.MrzResult;
+import com.example.emrtdreader.sdk.domain.AccessKey;
+import com.example.emrtdreader.sdk.models.MrzFormat;
+import com.example.emrtdreader.sdk.models.MrzResult;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;

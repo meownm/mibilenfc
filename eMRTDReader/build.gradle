@@ -87,3 +87,114 @@ tasks.register("verifyGradleSyncConfig") {
         }
     }
 }
+
+tasks.register("verifyModuleNamespaces") {
+    group = "verification"
+    description = "Verifies app and SDK modules declare the expected distinct namespaces."
+
+    doLast {
+        def expectedNamespaces = [
+            app: "com.example.emrtdreader",
+            sdk: "com.example.emrtdreader.sdk"
+        ]
+
+        def violations = []
+        expectedNamespaces.each { moduleName, expectedNamespace ->
+            def moduleFile = file("${moduleName}/build.gradle")
+            if (!moduleFile.exists()) {
+                violations << "${moduleFile}: missing build.gradle to verify namespace"
+            } else {
+                def text = moduleFile.getText("UTF-8")
+                def matcher = (text =~ /namespace\s+'([^']+)'/)
+                if (!matcher.find()) {
+                    violations << "${moduleFile}: missing namespace declaration"
+                } else if (matcher.group(1) != expectedNamespace) {
+                    violations << "${moduleFile}: namespace ${matcher.group(1)} does not match expected ${expectedNamespace}"
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            throw new GradleException("Module namespace verification failed:\\n - " + violations.join("\\n - "))
+        }
+    }
+}
+
+tasks.register("verifyDistinctNamespaces") {
+    group = "verification"
+    description = "Fails if the app and SDK modules share the same namespace."
+
+    doLast {
+        def appFile = file("app/build.gradle")
+        def sdkFile = file("sdk/build.gradle")
+        def violations = []
+
+        if (!appFile.exists() || !sdkFile.exists()) {
+            violations << "Missing build.gradle for app or sdk modules."
+        } else {
+            def appNamespaceMatcher = (appFile.getText("UTF-8") =~ /namespace\s+'([^']+)'/)
+            def sdkNamespaceMatcher = (sdkFile.getText("UTF-8") =~ /namespace\s+'([^']+)'/)
+
+            if (!appNamespaceMatcher.find()) {
+                violations << "${appFile}: missing namespace declaration"
+            }
+            if (!sdkNamespaceMatcher.find()) {
+                violations << "${sdkFile}: missing namespace declaration"
+            }
+
+            if (violations.isEmpty() && appNamespaceMatcher.group(1) == sdkNamespaceMatcher.group(1)) {
+                violations << "App and SDK namespaces are identical (${appNamespaceMatcher.group(1)})."
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            throw new GradleException("Distinct namespace verification failed:\\n - " + violations.join("\\n - "))
+        }
+    }
+}
+
+tasks.register("verifySdkPackageDeclarations") {
+    group = "verification"
+    description = "Verifies SDK source and test packages are under com.example.emrtdreader.sdk."
+
+    doLast {
+        def violations = []
+        [file("sdk/src/main/java"), file("sdk/src/test/java")].each { rootDir ->
+            if (!rootDir.exists()) {
+                return
+            }
+            fileTree(rootDir) {
+                include "**/*.java"
+            }.each { sourceFile ->
+                def text = sourceFile.getText("UTF-8")
+                def matcher = (text =~ /^package\s+([\\w\\.]+);/)
+                if (!matcher.find()) {
+                    violations << "${sourceFile}: missing package declaration"
+                } else if (!matcher.group(1).startsWith("com.example.emrtdreader.sdk")) {
+                    violations << "${sourceFile}: package ${matcher.group(1)} is outside expected SDK namespace"
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            throw new GradleException("SDK package declaration verification failed:\\n - " + violations.join("\\n - "))
+        }
+    }
+}
+
+tasks.register("verifyAppSdkIntegration") {
+    group = "verification"
+    description = "Builds the app module with the SDK dependency to validate integration."
+
+    dependsOn(":app:assembleDebug")
+
+    doLast {
+        def appBuildFile = file("app/build.gradle")
+        if (appBuildFile.exists()) {
+            def text = appBuildFile.getText("UTF-8")
+            if (!(text =~ /implementation\\s+project\\(':sdk'\\)/)) {
+                throw new GradleException("app/build.gradle is missing implementation project(':sdk') dependency.")
+            }
+        }
+    }
+}
