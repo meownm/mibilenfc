@@ -10,9 +10,9 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.example.emrtdreader.data.NfcPassportReader;
-import com.example.emrtdreader.domain.AccessKey;
-import com.example.emrtdreader.domain.PassportReadResult;
+import com.example.emrtdreader.sdk.data.NfcPassportReader;
+import com.example.emrtdreader.sdk.domain.AccessKey;
+import com.example.emrtdreader.sdk.domain.PassportReadResult;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

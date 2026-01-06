@@ -28,16 +28,16 @@ import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
 
-import com.example.emrtdreader.analyzer.MrzImageAnalyzer;
-import com.example.emrtdreader.domain.AccessKey;
-import com.example.emrtdreader.models.MrzResult;
-import com.example.emrtdreader.models.OcrResult;
-import com.example.emrtdreader.ocr.MlKitOcrEngine;
-import com.example.emrtdreader.ocr.TesseractOcrEngine;
-import com.example.emrtdreader.ocr.DualOcrRunner;
+import com.example.emrtdreader.sdk.analyzer.MrzImageAnalyzer;
+import com.example.emrtdreader.sdk.domain.AccessKey;
+import com.example.emrtdreader.sdk.models.MrzResult;
+import com.example.emrtdreader.sdk.models.OcrResult;
+import com.example.emrtdreader.sdk.ocr.MlKitOcrEngine;
+import com.example.emrtdreader.sdk.ocr.TesseractOcrEngine;
+import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
 
 import android.graphics.Rect;
-import com.example.emrtdreader.utils.MrzParser;
+import com.example.emrtdreader.sdk.utils.MrzParser;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

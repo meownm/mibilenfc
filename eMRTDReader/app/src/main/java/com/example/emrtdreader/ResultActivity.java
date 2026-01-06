@@ -7,9 +7,9 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.example.emrtdreader.domain.PassportReadResult;
-import com.example.emrtdreader.models.PassportChipData;
-import com.example.emrtdreader.models.VerificationResult;
+import com.example.emrtdreader.sdk.domain.PassportReadResult;
+import com.example.emrtdreader.sdk.models.PassportChipData;
+import com.example.emrtdreader.sdk.models.VerificationResult;
 
 public class ResultActivity extends AppCompatActivity {
 

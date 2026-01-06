@@ -42,6 +42,13 @@ Run the DSL validation task (positive + negative checks):
 ./gradlew verifyGradleDsl
 ```
 
+Run the namespace checks to ensure distinct module namespaces and SDK packages:
+```bash
+./gradlew verifyModuleNamespaces
+./gradlew verifyDistinctNamespaces
+./gradlew verifySdkPackageDeclarations
+```
+
 Run the SDK dependency resolution checks (positive + negative checks) to ensure
 Android-safe BouncyCastle artifacts are pinned and Jetifier-triggering modules
 are excluded:
@@ -52,4 +59,9 @@ are excluded:
 Run the integration/unit test suite for the SDK:
 ```bash
 ./gradlew :sdk:testDebugUnitTest
+```
+
+Run the app + SDK integration build:
+```bash
+./gradlew verifyAppSdkIntegration
 ```
