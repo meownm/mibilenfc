@@ -118,6 +118,34 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
+    public void analyzeKeepsOcrWorkingAfterCloseWithRotation() {
+        Context context = ApplicationProvider.getApplicationContext();
+        AtomicBoolean closed = new AtomicBoolean(false);
+        AtomicBoolean recognizeCalled = new AtomicBoolean(false);
+        AtomicBoolean immutableSeen = new AtomicBoolean(false);
+        OcrEngine mlKit = new FlagOcrEngine(closed, recognizeCalled, immutableSeen);
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createSolidBitmap(8, 8, Color.GRAY))
+        );
+
+        ImageProxy imageProxy = createImageProxy(closed, 8, 8, 90);
+        analyzer.analyze(imageProxy);
+
+        assertTrue(recognizeCalled.get());
+        assertTrue(immutableSeen.get());
+        verify(listener).onOcr(any(), any(), any());
+        assertTrue(closed.get());
+    }
+
+    @Test
     public void analyzePassesImmutableBitmapToOcr() {
         Context context = ApplicationProvider.getApplicationContext();
         AtomicBoolean immutableSeen = new AtomicBoolean(false);
@@ -377,10 +405,14 @@ public class MrzImageAnalyzerTest {
     }
 
     private static ImageProxy createImageProxy(AtomicBoolean closedFlag, int width, int height) {
+        return createImageProxy(closedFlag, width, height, 0);
+    }
+
+    private static ImageProxy createImageProxy(AtomicBoolean closedFlag, int width, int height, int rotationDegrees) {
         ImageProxy imageProxy = mock(ImageProxy.class);
         ImageInfo imageInfo = mock(ImageInfo.class);
         when(imageProxy.getImageInfo()).thenReturn(imageInfo);
-        when(imageInfo.getRotationDegrees()).thenReturn(0);
+        when(imageInfo.getRotationDegrees()).thenReturn(rotationDegrees);
         when(imageProxy.getWidth()).thenReturn(width);
         when(imageProxy.getHeight()).thenReturn(height);
         when(imageProxy.getImage()).thenReturn(mock(Image.class));
