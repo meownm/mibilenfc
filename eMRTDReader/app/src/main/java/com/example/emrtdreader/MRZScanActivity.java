@@ -266,6 +266,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
             }
             if (ocr != null) {
                 appendLogLine(buildOcrLogLine(ocr));
+                appendRawOcrLog("RAW OCR (" + ocr.engine.name() + "):\n" + normalizeRawOcrText(ocr.rawText));
                 metricsTextView.setText(
                         "Mode: " + mode.name() +
                         " | " + ocr.elapsedMs + "ms" +
@@ -419,6 +420,23 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
                 + " | brightness " + String.format("%.0f", ocr.metrics.brightness)
                 + " | contrast " + String.format("%.0f", ocr.metrics.contrast)
                 + " | sharpness " + String.format("%.0f", ocr.metrics.sharpness);
+    }
+
+    private String normalizeRawOcrText(String rawText) {
+        if (rawText == null || rawText.trim().isEmpty()) {
+            return "(empty)";
+        }
+        return rawText;
+    }
+
+    private void appendRawOcrLog(String message) {
+        if (logTextView == null) {
+            return;
+        }
+        logTextView.append("\n" + message);
+        if (logScrollView != null) {
+            logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN));
+        }
     }
 
     private void appendLogLine(String line) {

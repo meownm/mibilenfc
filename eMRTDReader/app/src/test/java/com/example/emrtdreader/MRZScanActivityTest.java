@@ -214,8 +214,63 @@ public class MRZScanActivityTest {
         TextView logTextView = activity.findViewById(R.id.logTextView);
         String logText = logTextView.getText().toString();
         assertTrue(logText.contains("OCR (ML_KIT) 120ms"));
+        assertTrue(logText.contains("RAW OCR (ML_KIT):"));
+        assertTrue(logText.contains("LINE1"));
         assertTrue(logText.contains("MRZ locked (burst):"));
         assertTrue(logText.contains(mrz.asMrzText()));
+    }
+
+    @Test
+    public void logAppendsRawOcrTextWhenMrzMissing() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        OcrResult ocr = new OcrResult(
+                "LINE1\nLINE2",
+                120,
+                new OcrMetrics(10.0, 20.0, 30.0),
+                OcrResult.Engine.ML_KIT
+        );
+
+        activity.onOcr(ocr, null, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        String logText = logTextView.getText().toString();
+        assertTrue(logText.contains("RAW OCR (ML_KIT):"));
+        assertTrue(logText.contains("LINE1"));
+        assertTrue(logText.contains("LINE2"));
+    }
+
+    @Test
+    public void logAccumulatesAcrossOcrEvents() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        OcrResult first = new OcrResult(
+                "FIRST LINE",
+                50,
+                new OcrMetrics(11.0, 21.0, 31.0),
+                OcrResult.Engine.ML_KIT
+        );
+        OcrResult second = new OcrResult(
+                "SECOND LINE",
+                70,
+                new OcrMetrics(12.0, 22.0, 32.0),
+                OcrResult.Engine.TESSERACT
+        );
+
+        activity.onOcr(first, null, new Rect(0, 0, 10, 10));
+        activity.onOcr(second, null, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        String logText = logTextView.getText().toString();
+        assertTrue(logText.contains("FIRST LINE"));
+        assertTrue(logText.contains("SECOND LINE"));
+        assertTrue(logText.indexOf("FIRST LINE") < logText.indexOf("SECOND LINE"));
     }
 
     @Test
