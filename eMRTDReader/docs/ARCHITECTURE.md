@@ -9,9 +9,9 @@
 2. MRZ zone detection (heuristic)
 3. ROI stabilization (moving average + IoU outlier rejection)
 4. Quality gate (sharpness)
-5. Preprocess (grayscale + contrast)
-6. Adaptive threshold (local) + fallback
-7. OCR (ML Kit / Tesseract / Dual, ML Kit + Tesseract run concurrently with timeout fallback, delivered asynchronously)
+5. Preprocess (grayscale + contrast) for ML Kit input
+6. Adaptive threshold (local) for Tesseract input (derived from the grayscale/contrast stage)
+7. OCR (ML Kit / Tesseract / Dual, ML Kit + Tesseract run concurrently with timeout fallback, delivered asynchronously and with engine-specific preprocessing)
 8. MRZ normalization + checksum-guided repair (TD3/TD1)
 9. Burst aggregation -> final MRZ
 
