@@ -44,6 +44,8 @@ import java.util.concurrent.Executors;
 
 public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyzer.Listener {
 
+    private static final int OCR_PREVIEW_LINES = 2;
+
     private PreviewView previewView;
     private Spinner ocrSpinner;
     private TextView mrzTextView;
@@ -224,7 +226,18 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         if (bestSingle != null) latestMrz = bestSingle;
 
         runOnUiThread(() -> {
-            if (bestSingle != null) mrzTextView.setText(bestSingle.asMrzText());
+            if (bestSingle != null) {
+                mrzTextView.setText(bestSingle.asMrzText());
+            } else if (ocr != null) {
+                String preview = buildOcrPreview(ocr.rawText);
+                StringBuilder status = new StringBuilder("MRZ not detected yet\nOCR running...");
+                if (!preview.isEmpty()) {
+                    status.append("\n").append(preview);
+                }
+                mrzTextView.setText(status.toString());
+            } else {
+                mrzTextView.setText("Camera not delivering frames");
+            }
             if (ocr != null) {
                 metricsTextView.setText(
                         "Mode: " + mode.name() +
@@ -235,6 +248,33 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
                 );
             }
         });
+    }
+
+    private String buildOcrPreview(String rawText) {
+        if (rawText == null || rawText.trim().isEmpty()) {
+            return "";
+        }
+        String[] lines = rawText.split("\\R");
+        StringBuilder preview = new StringBuilder();
+        int count = 0;
+        for (String line : lines) {
+            if (line == null) {
+                continue;
+            }
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (preview.length() > 0) {
+                preview.append("\n");
+            }
+            preview.append(trimmed);
+            count++;
+            if (count >= OCR_PREVIEW_LINES) {
+                break;
+            }
+        }
+        return preview.toString();
     }
 
     @Override
