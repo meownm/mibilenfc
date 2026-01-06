@@ -17,6 +17,13 @@
 
 Listener callbacks from `MrzImageAnalyzer` now include an error signal that surfaces critical analyzer failures to UI layers (e.g., MRZ scan activity toast/status updates) alongside the usual OCR and final MRZ callbacks.
 
+## MRZ scan UI feedback
+The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome:
+- Green when an MRZ is detected or finalized.
+- Purple for ML Kit OCR updates.
+- Blue for Tesseract OCR updates.
+- Red when frames stop arriving or the analyzer reports an error.
+
 ## NFC pipeline
 - Access key from MRZ (BAC) + PACE best-effort
 - Read DG1/DG2/SOD

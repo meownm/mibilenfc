@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 import android.Manifest;
+import android.view.View;
 
 import androidx.camera.view.PreviewView;
 
@@ -29,6 +30,9 @@ public class CameraUiIntegrationTest {
 
         PreviewView previewView = activity.findViewById(R.id.cameraPreviewView);
         assertNotNull(previewView);
+
+        View overlayView = activity.findViewById(R.id.analysisOverlayView);
+        assertNotNull(overlayView);
 
         Field field = MRZScanActivity.class.getDeclaredField("previewView");
         assertEquals(PreviewView.class, field.getType());

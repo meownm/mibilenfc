@@ -1,13 +1,21 @@
 package com.example.emrtdreader;
 
 import android.Manifest;
+import android.animation.ArgbEvaluator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Size;
+import android.view.View;
+import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -18,6 +26,7 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.ColorInt;
 import androidx.annotation.OptIn;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
@@ -45,8 +54,10 @@ import java.util.concurrent.Executors;
 public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyzer.Listener {
 
     private static final int OCR_PREVIEW_LINES = 2;
+    private static final long OVERLAY_ANIMATION_MS = 180L;
 
     private PreviewView previewView;
+    private View analysisOverlayView;
     private Spinner ocrSpinner;
     private TextView mrzTextView;
     private TextView metricsTextView;
@@ -65,6 +76,9 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     private MrzImageAnalyzer analyzer;
     private MrzResult latestMrz;
     private OcrResult latestOcr;
+    private ValueAnimator overlayAnimator;
+    private int overlayCurrentColor;
+    private int overlayTargetColor;
 
     private final ActivityResultLauncher<String> requestCameraPermission =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
@@ -78,6 +92,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         setContentView(R.layout.activity_mrz_scan);
 
         previewView = findViewById(R.id.cameraPreviewView);
+        analysisOverlayView = findViewById(R.id.analysisOverlayView);
         ocrSpinner = findViewById(R.id.ocrSpinner);
         mrzTextView = findViewById(R.id.mrzTextView);
         metricsTextView = findViewById(R.id.metricsTextView);
@@ -89,6 +104,9 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         dobEdit = findViewById(R.id.dobEdit);
         doeEdit = findViewById(R.id.doeEdit);
         confirmManualButton = findViewById(R.id.confirmManualButton);
+        overlayCurrentColor = ContextCompat.getColor(this, R.color.overlay_idle);
+        overlayTargetColor = overlayCurrentColor;
+        applyOverlayColor(overlayCurrentColor);
 
         setupOcrSpinner();
         setupButtons();
@@ -226,6 +244,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         if (bestSingle != null) latestMrz = bestSingle;
 
         runOnUiThread(() -> {
+            updateOverlayColor(resolveOverlayColor(ocr, bestSingle, false));
             if (bestSingle != null) {
                 mrzTextView.setText(bestSingle.asMrzText());
             } else if (ocr != null) {
@@ -281,6 +300,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     public void onFinalMrz(MrzResult finalMrz, Rect roi) {
         latestMrz = finalMrz;
         runOnUiThread(() -> {
+            updateOverlayColor(ContextCompat.getColor(this, R.color.overlay_mrz_green));
             mrzTextView.setText(finalMrz.asMrzText());
             Toast.makeText(this, "MRZ locked (burst)", Toast.LENGTH_SHORT).show();
         });
@@ -289,6 +309,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     @Override
     public void onAnalyzerError(String message, Throwable error) {
         runOnUiThread(() -> {
+            updateOverlayColor(ContextCompat.getColor(this, R.color.overlay_error_red));
             mrzTextView.setText("Analyzer error: " + message);
             Toast.makeText(this, "Analyzer error: " + message, Toast.LENGTH_LONG).show();
         });
@@ -297,8 +318,89 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (overlayAnimator != null) {
+            overlayAnimator.cancel();
+        }
         analysisExecutor.shutdownNow();
         mlKit.close();
         tess.close();
+    }
+
+    private int resolveOverlayColor(OcrResult ocr, MrzResult mrz, boolean isError) {
+        if (isError) {
+            return ContextCompat.getColor(this, R.color.overlay_error_red);
+        }
+        if (mrz != null) {
+            return ContextCompat.getColor(this, R.color.overlay_mrz_green);
+        }
+        if (ocr == null) {
+            return ContextCompat.getColor(this, R.color.overlay_error_red);
+        }
+        if (ocr.engine == OcrResult.Engine.ML_KIT) {
+            return ContextCompat.getColor(this, R.color.overlay_mlkit_purple);
+        }
+        if (ocr.engine == OcrResult.Engine.TESSERACT) {
+            return ContextCompat.getColor(this, R.color.overlay_tess_blue);
+        }
+        if (mode == DualOcrRunner.Mode.MLKIT_ONLY) {
+            return ContextCompat.getColor(this, R.color.overlay_mlkit_purple);
+        }
+        if (mode == DualOcrRunner.Mode.TESS_ONLY) {
+            return ContextCompat.getColor(this, R.color.overlay_tess_blue);
+        }
+        return ContextCompat.getColor(this, R.color.overlay_error_red);
+    }
+
+    private void updateOverlayColor(@ColorInt int targetColor) {
+        if (analysisOverlayView == null) {
+            return;
+        }
+        if (targetColor == overlayTargetColor) {
+            return;
+        }
+        overlayTargetColor = targetColor;
+        int startColor = overlayCurrentColor;
+        if (overlayAnimator != null) {
+            overlayAnimator.cancel();
+        }
+        long duration = getOverlayAnimationDuration();
+        if (duration == 0L) {
+            applyOverlayColor(targetColor);
+            overlayCurrentColor = targetColor;
+            return;
+        }
+        overlayAnimator = ValueAnimator.ofObject(new ArgbEvaluator(), startColor, targetColor);
+        overlayAnimator.setDuration(duration);
+        overlayAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+        overlayAnimator.addUpdateListener(animation -> {
+            int color = (int) animation.getAnimatedValue();
+            applyOverlayColor(color);
+            overlayCurrentColor = color;
+        });
+        overlayAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                overlayCurrentColor = targetColor;
+            }
+
+            @Override
+            public void onAnimationCancel(android.animation.Animator animation) {
+                overlayCurrentColor = targetColor;
+            }
+        });
+        overlayAnimator.start();
+    }
+
+    private void applyOverlayColor(@ColorInt int color) {
+        Drawable background = analysisOverlayView.getBackground();
+        if (background instanceof GradientDrawable) {
+            ((GradientDrawable) background.mutate()).setColor(color);
+        } else {
+            analysisOverlayView.setBackgroundColor(color);
+        }
+    }
+
+    private long getOverlayAnimationDuration() {
+        return "robolectric".equalsIgnoreCase(Build.FINGERPRINT) ? 0L : OVERLAY_ANIMATION_MS;
     }
 }

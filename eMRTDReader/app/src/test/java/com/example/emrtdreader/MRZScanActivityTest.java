@@ -7,10 +7,13 @@ import static org.robolectric.Shadows.shadowOf;
 
 import android.Manifest;
 import android.content.Intent;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.Rect;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+
+import androidx.core.content.ContextCompat;
 
 import com.example.emrtdreader.sdk.domain.AccessKey;
 import com.example.emrtdreader.sdk.models.MrzFormat;
@@ -127,7 +130,8 @@ public class MRZScanActivityTest {
         OcrResult ocr = new OcrResult(
                 "LINE1\nLINE2\nLINE3",
                 120,
-                new OcrMetrics(10.0, 20.0, 30.0)
+                new OcrMetrics(10.0, 20.0, 30.0),
+                OcrResult.Engine.ML_KIT
         );
 
         activity.onOcr(ocr, null, new Rect(0, 0, 10, 10));
@@ -158,7 +162,8 @@ public class MRZScanActivityTest {
         OcrResult ocr = new OcrResult(
                 "RAW\nTEXT",
                 80,
-                new OcrMetrics(10.0, 20.0, 30.0)
+                new OcrMetrics(10.0, 20.0, 30.0),
+                OcrResult.Engine.TESSERACT
         );
 
         activity.onOcr(ocr, mrz, new Rect(0, 0, 10, 10));
@@ -193,5 +198,106 @@ public class MRZScanActivityTest {
         TextView mrzTextView = activity.findViewById(R.id.mrzTextView);
         assertEquals("Analyzer error: Frame decode failed", mrzTextView.getText().toString());
         assertEquals("Analyzer error: Frame decode failed", ShadowToast.getTextOfLatestToast());
+    }
+
+    @Test
+    public void overlayTurnsPurpleOnMlKitOcr() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        OcrResult ocr = new OcrResult(
+                "LINE1",
+                120,
+                new OcrMetrics(10.0, 20.0, 30.0),
+                OcrResult.Engine.ML_KIT
+        );
+
+        activity.onOcr(ocr, null, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        int actual = getOverlayColor(activity);
+        int expected = ContextCompat.getColor(activity, R.color.overlay_mlkit_purple);
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    public void overlayTurnsBlueOnTesseractOcr() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        OcrResult ocr = new OcrResult(
+                "LINE1",
+                120,
+                new OcrMetrics(10.0, 20.0, 30.0),
+                OcrResult.Engine.TESSERACT
+        );
+
+        activity.onOcr(ocr, null, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        int actual = getOverlayColor(activity);
+        int expected = ContextCompat.getColor(activity, R.color.overlay_tess_blue);
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    public void overlayTurnsGreenOnMrzHit() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        MrzResult mrz = new MrzResult(
+                "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+                "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+                null,
+                MrzFormat.TD3,
+                4
+        );
+        OcrResult ocr = new OcrResult(
+                "RAW\nTEXT",
+                80,
+                new OcrMetrics(10.0, 20.0, 30.0),
+                OcrResult.Engine.ML_KIT
+        );
+
+        activity.onOcr(ocr, mrz, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        int actual = getOverlayColor(activity);
+        int expected = ContextCompat.getColor(activity, R.color.overlay_mrz_green);
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    public void overlayTurnsRedOnFrameLoss() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        activity.onOcr(null, null, new Rect(0, 0, 10, 10));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        int actual = getOverlayColor(activity);
+        int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    public void overlayTurnsRedOnAnalyzerError() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        activity.onAnalyzerError("Frame decode failed", new RuntimeException("boom"));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        int actual = getOverlayColor(activity);
+        int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
+        assertEquals(expected, actual);
+    }
+
+    private int getOverlayColor(MRZScanActivity activity) {
+        GradientDrawable drawable = (GradientDrawable) activity.findViewById(R.id.analysisOverlayView).getBackground();
+        if (drawable.getColor() == null) {
+            return 0;
+        }
+        return drawable.getColor().getDefaultColor();
     }
 }

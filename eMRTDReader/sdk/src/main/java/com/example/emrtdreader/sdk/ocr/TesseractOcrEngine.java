@@ -69,10 +69,10 @@ public class TesseractOcrEngine implements OcrEngine {
             tess.setImage(bitmap);
             String txt = tess.getUTF8Text();
             long dt = System.currentTimeMillis() - t0;
-            return new OcrResult(txt == null ? "" : txt, dt, metrics);
+            return new OcrResult(txt == null ? "" : txt, dt, metrics, OcrResult.Engine.TESSERACT);
         } catch (Throwable e) {
             long dt = System.currentTimeMillis() - t0;
-            return new OcrResult("", dt, metrics);
+            return new OcrResult("", dt, metrics, OcrResult.Engine.TESSERACT);
         }
     }
 
