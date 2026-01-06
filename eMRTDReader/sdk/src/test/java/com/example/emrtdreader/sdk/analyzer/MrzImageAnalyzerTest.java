@@ -2,6 +2,7 @@ package com.example.emrtdreader.sdk.analyzer;
 
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
@@ -171,6 +172,86 @@ public class MrzImageAnalyzerTest {
             }
         }
         assertTrue(frameLogs >= 2);
+    }
+
+    @Test
+    public void analyzeEmitsHeartbeatWhenNoRoiDetected() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mock(OcrEngine.class),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createSolidBitmap(24, 24, Color.WHITE))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 24, 24));
+
+        verify(listener).onFrameProcessed(eq(ScanState.WAITING), eq("No MRZ ROI detected"), anyLong());
+        verify(listener).onScanState(eq(ScanState.WAITING), eq("No MRZ ROI detected"));
+    }
+
+    @Test
+    public void analyzeEmitsHeartbeatWhenIntervalSkips() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                100000,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+
+        verify(listener).onFrameProcessed(eq(ScanState.WAITING), eq("Frame skipped: interval"), anyLong());
+        verify(listener).onScanState(eq(ScanState.WAITING), eq("Frame skipped: interval"));
+    }
+
+    @Test
+    public void analyzeEmitsHeartbeatWhenOcrInFlightSkips() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch releaseLatch = new CountDownLatch(1);
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new DelayedOcrEngine(startLatch, releaseLatch),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        AtomicBoolean closedFirst = new AtomicBoolean(false);
+        Thread firstThread = new Thread(() -> analyzer.analyze(createImageProxy(closedFirst, 320, 240)));
+        firstThread.start();
+
+        assertTrue(startLatch.await(2, TimeUnit.SECONDS));
+        AtomicBoolean closedSecond = new AtomicBoolean(false);
+        analyzer.analyze(createImageProxy(closedSecond, 320, 240));
+
+        verify(listener).onFrameProcessed(eq(ScanState.WAITING), eq("Frame skipped: OCR in flight"), anyLong());
+        verify(listener).onScanState(eq(ScanState.WAITING), eq("Frame skipped: OCR in flight"));
+
+        releaseLatch.countDown();
+        firstThread.join(500);
     }
 
     @Test

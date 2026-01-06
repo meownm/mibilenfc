@@ -34,12 +34,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     private static final String TAG = "MRZ";
+    private static final String MSG_NO_ROI = "No MRZ ROI detected";
+    private static final String MSG_SKIP_INTERVAL = "Frame skipped: interval";
+    private static final String MSG_SKIP_OCR_IN_FLIGHT = "Frame skipped: OCR in flight";
 
     public interface Listener {
         void onOcr(OcrResult ocr, MrzResult bestSingle, Rect roi);
         void onFinalMrz(MrzResult finalMrz, Rect roi);
         void onAnalyzerError(String message, Throwable error);
         default void onScanState(ScanState state, String message) {}
+        default void onFrameProcessed(ScanState state, String message, long timestampMs) {}
     }
 
     private final Context appContext;
@@ -129,6 +133,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         long now = System.currentTimeMillis();
         if (now - lastTs < intervalMs) {
             image.close();
+            notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_INTERVAL, now);
             return;
         }
         lastTs = now;
@@ -161,12 +166,16 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                     + " noise=" + String.format(Locale.US, "%.2f", stats.noise));
 
             Rect detected = MrzAutoDetector.detect(safeBitmap);
-            if (detected == null) return;
+            if (detected == null) {
+                notifyFrameProcessed(ScanState.WAITING, MSG_NO_ROI, System.currentTimeMillis());
+                return;
+            }
 
             Rect stable = rectAverager.update(detected, safeBitmap.getWidth(), safeBitmap.getHeight());
             Bitmap roiBmp = Bitmap.createBitmap(safeBitmap, stable.left, stable.top, stable.width(), stable.height());
 
             if (!ocrInFlight.compareAndSet(false, true)) {
+                notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_OCR_IN_FLIGHT, System.currentTimeMillis());
                 return;
             }
 
@@ -279,6 +288,13 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         if (listener != null) {
             listener.onAnalyzerError(message, error);
             listener.onScanState(ScanState.ERROR, message);
+        }
+    }
+
+    private void notifyFrameProcessed(ScanState state, String message, long timestampMs) {
+        if (listener != null) {
+            listener.onFrameProcessed(state, message, timestampMs);
+            listener.onScanState(state, message);
         }
     }
 

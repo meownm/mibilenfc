@@ -57,6 +57,15 @@ If strict formatting fails, the score is `0.0`.
 ## OCR threading
 `MrzImageAnalyzer` and the OCR engines use a callback-based contract. OCR results and errors are delivered asynchronously (often on background threads), so UI layers should marshal updates onto the main thread as needed. The analyzer never blocks on OCR completion, allowing continuous frame delivery.
 
+## Scan heartbeat events
+`MrzImageAnalyzer.Listener` emits lightweight heartbeat callbacks so the UI can stay responsive even when no MRZ ROI is found or frames are skipped:
+
+- `onFrameProcessed(ScanState.WAITING, "No MRZ ROI detected", timestampMs)` fires when `MrzAutoDetector` returns `null`.
+- `onFrameProcessed(ScanState.WAITING, "Frame skipped: interval", timestampMs)` fires when frames are throttled by the analysis interval.
+- `onFrameProcessed(ScanState.WAITING, "Frame skipped: OCR in flight", timestampMs)` fires when backpressure skips frames while OCR is running.
+
+These callbacks also trigger `onScanState(ScanState.WAITING, message)` so UI overlays can remain in a "waiting" state without relying on OCR results.
+
 ## Passive authentication
 The SDK verifies SOD signatures and data group hashes using Bouncy Castle. Ensure the
 `sdk` module keeps the Bouncy Castle provider and certificate converter classes on the
