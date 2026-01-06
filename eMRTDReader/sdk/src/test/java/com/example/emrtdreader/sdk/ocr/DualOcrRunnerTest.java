@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 
 import androidx.test.core.app.ApplicationProvider;
 
@@ -178,6 +179,167 @@ public class DualOcrRunnerTest {
         assertNotNull(errorRef.get());
     }
 
+    @Test
+    public void mlKitOnlyUsesNonBinarizedPreprocess() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        Bitmap bitmap = createGradientBitmap(8, 8);
+
+        CapturingOcrEngine mlKit = new CapturingOcrEngine(OcrResult.Engine.ML_KIT);
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<DualOcrRunner.RunResult> resultRef = new AtomicReference<>();
+
+        DualOcrRunner.runAsyncWithTimeout(
+                context,
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                mlKit,
+                null,
+                bitmap,
+                0,
+                500,
+                new DualOcrRunner.RunCallback() {
+                    @Override
+                    public void onSuccess(DualOcrRunner.RunResult result) {
+                        resultRef.set(result);
+                        latch.countDown();
+                    }
+
+                    @Override
+                    public void onFailure(Throwable error) {
+                        latch.countDown();
+                    }
+                });
+
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        assertNotNull(resultRef.get());
+        assertNotNull(mlKit.lastBitmap.get());
+        assertTrue("ML Kit preprocess should preserve grayscale (non-binary) pixels",
+                hasNonBinaryPixel(mlKit.lastBitmap.get()));
+    }
+
+    @Test
+    public void tessOnlyUsesBinarizedPreprocess() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        Bitmap bitmap = createGradientBitmap(8, 8);
+
+        CapturingOcrEngine tess = new CapturingOcrEngine(OcrResult.Engine.TESSERACT);
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<DualOcrRunner.RunResult> resultRef = new AtomicReference<>();
+
+        DualOcrRunner.runAsyncWithTimeout(
+                context,
+                DualOcrRunner.Mode.TESS_ONLY,
+                null,
+                tess,
+                bitmap,
+                0,
+                500,
+                new DualOcrRunner.RunCallback() {
+                    @Override
+                    public void onSuccess(DualOcrRunner.RunResult result) {
+                        resultRef.set(result);
+                        latch.countDown();
+                    }
+
+                    @Override
+                    public void onFailure(Throwable error) {
+                        latch.countDown();
+                    }
+                });
+
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        assertNotNull(resultRef.get());
+        assertNotNull(tess.lastBitmap.get());
+        assertTrue("Tesseract preprocess should be binarized",
+                isBinarized(tess.lastBitmap.get()));
+    }
+
+    @Test
+    public void autoDualUsesDifferentPreprocessForEngines() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        Bitmap bitmap = createGradientBitmap(8, 8);
+
+        CapturingOcrEngine mlKit = new CapturingOcrEngine(OcrResult.Engine.ML_KIT);
+        CapturingOcrEngine tess = new CapturingOcrEngine(OcrResult.Engine.TESSERACT);
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<DualOcrRunner.RunResult> resultRef = new AtomicReference<>();
+
+        DualOcrRunner.runAsyncWithTimeout(
+                context,
+                DualOcrRunner.Mode.AUTO_DUAL,
+                mlKit,
+                tess,
+                bitmap,
+                0,
+                500,
+                new DualOcrRunner.RunCallback() {
+                    @Override
+                    public void onSuccess(DualOcrRunner.RunResult result) {
+                        resultRef.set(result);
+                        latch.countDown();
+                    }
+
+                    @Override
+                    public void onFailure(Throwable error) {
+                        latch.countDown();
+                    }
+                });
+
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        assertNotNull(resultRef.get());
+        Bitmap mlBitmap = mlKit.lastBitmap.get();
+        Bitmap tessBitmap = tess.lastBitmap.get();
+        assertNotNull(mlBitmap);
+        assertNotNull(tessBitmap);
+        assertTrue("ML Kit should receive non-binarized pixels", hasNonBinaryPixel(mlBitmap));
+        assertTrue("Tesseract should receive binarized pixels", isBinarized(tessBitmap));
+        assertTrue("ML and Tesseract inputs should differ", mlBitmap != tessBitmap);
+    }
+
+    private static Bitmap createGradientBitmap(int width, int height) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int value = Math.min(255, (x + y) * 16);
+                bitmap.setPixel(x, y, Color.rgb(value, value / 2, 255 - value));
+            }
+        }
+        return bitmap;
+    }
+
+    private static boolean isBinarized(Bitmap bitmap) {
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                int color = bitmap.getPixel(x, y);
+                int r = Color.red(color);
+                int g = Color.green(color);
+                int b = Color.blue(color);
+                if (r != g || r != b || (r != 0 && r != 255)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasNonBinaryPixel(Bitmap bitmap) {
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                int color = bitmap.getPixel(x, y);
+                int r = Color.red(color);
+                int g = Color.green(color);
+                int b = Color.blue(color);
+                if (r == g && r == b && (r == 0 || r == 255)) {
+                    continue;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static final class FakeOcrEngine implements OcrEngine {
         private static final ScheduledExecutorService EXECUTOR =
                 Executors.newScheduledThreadPool(2);
@@ -213,6 +375,40 @@ public class DualOcrRunnerTest {
                     callback.onSuccess(result);
                 }
             }, delayMs, TimeUnit.MILLISECONDS);
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static final class CapturingOcrEngine implements OcrEngine {
+        private static final ScheduledExecutorService EXECUTOR =
+                Executors.newScheduledThreadPool(2);
+
+        private final OcrResult.Engine engine;
+        private final AtomicReference<Bitmap> lastBitmap = new AtomicReference<>();
+
+        private CapturingOcrEngine(OcrResult.Engine engine) {
+            this.engine = engine;
+        }
+
+        @Override
+        public String getName() {
+            return engine.name();
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
+            lastBitmap.set(bitmap);
+            EXECUTOR.schedule(() -> callback.onSuccess(new OcrResult("", 0, new OcrMetrics(0, 0, 0), engine)),
+                    0,
+                    TimeUnit.MILLISECONDS);
         }
 
         @Override

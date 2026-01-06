@@ -74,8 +74,8 @@ public final class DualOcrRunner {
         }
 
         CompletableFuture
-                .supplyAsync(() -> preprocess(roi), PREPROCESS_EXECUTOR)
-                .thenAccept(input -> runAsyncInternal(ctx, mode, mlKit, tess, input, rotationDeg, dualTimeoutMs, callback))
+                .supplyAsync(() -> preprocessForEngines(roi), PREPROCESS_EXECUTOR)
+                .thenAccept(inputs -> runAsyncInternal(ctx, mode, mlKit, tess, inputs, rotationDeg, dualTimeoutMs, callback))
                 .exceptionally(ex -> {
                     callback.onFailure(new IllegalStateException("OCR preprocessing failed", ex));
                     return null;
@@ -86,21 +86,23 @@ public final class DualOcrRunner {
                                          Mode mode,
                                          OcrEngine mlKit,
                                          OcrEngine tess,
-                                         Bitmap input,
+                                         PreprocessResult inputs,
                                          int rotationDeg,
                                          long dualTimeoutMs,
                                          RunCallback callback) {
+        Bitmap mlInput = inputs != null ? inputs.mlInput : null;
+        Bitmap tessInput = inputs != null ? inputs.tessInput : null;
         if (mode == Mode.MLKIT_ONLY) {
-            runSingleAsync(ctx, mlKit, input, rotationDeg, callback);
+            runSingleAsync(ctx, mlKit, mlInput, rotationDeg, callback);
             return;
         }
         if (mode == Mode.TESS_ONLY) {
-            runSingleAsync(ctx, tess, input, rotationDeg, callback);
+            runSingleAsync(ctx, tess, tessInput, rotationDeg, callback);
             return;
         }
 
-        CompletableFuture<OcrOutcome> mlFuture = runEngineAsync(ctx, mlKit, input, rotationDeg);
-        CompletableFuture<OcrOutcome> tessFuture = runEngineAsync(ctx, tess, input, rotationDeg);
+        CompletableFuture<OcrOutcome> mlFuture = runEngineAsync(ctx, mlKit, mlInput, rotationDeg);
+        CompletableFuture<OcrOutcome> tessFuture = runEngineAsync(ctx, tess, tessInput, rotationDeg);
         CompletableFuture<Void> all = CompletableFuture.allOf(mlFuture, tessFuture);
         AtomicBoolean completed = new AtomicBoolean(false);
         ScheduledFuture<?> timeoutFuture = TIMEOUT_EXECUTOR.schedule(() -> {
@@ -215,10 +217,17 @@ public final class DualOcrRunner {
         return future;
     }
 
-    private static Bitmap preprocess(Bitmap roi) {
+    private static PreprocessResult preprocessForEngines(Bitmap roi) {
+        return new PreprocessResult(preprocessForMl(roi), preprocessForTess(roi));
+    }
+
+    private static Bitmap preprocessForMl(Bitmap roi) {
+        return MrzPreprocessor.preprocess(roi);
+    }
+
+    private static Bitmap preprocessForTess(Bitmap roi) {
         Bitmap pre = MrzPreprocessor.preprocess(roi);
-        Bitmap bin = AdaptiveThreshold.binarize(pre);
-        return ThresholdSelector.choose(pre, bin);
+        return AdaptiveThreshold.binarize(pre);
     }
 
     private static MrzResult normalizeAndRepair(String raw) {
@@ -258,6 +267,16 @@ public final class DualOcrRunner {
             this.ocr = ocr;
             this.mrz = mrz;
             this.error = error;
+        }
+    }
+
+    private static final class PreprocessResult {
+        private final Bitmap mlInput;
+        private final Bitmap tessInput;
+
+        private PreprocessResult(Bitmap mlInput, Bitmap tessInput) {
+            this.mlInput = mlInput;
+            this.tessInput = tessInput;
         }
     }
 
