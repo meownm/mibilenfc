@@ -51,7 +51,7 @@ dependencies {
     /* =========================
        Tesseract
        ========================= */
-    implementation 'com.github.rmtheis:tess-two:9.1.0'
+    implementation 'com.rmtheis:tess-two:9.1.0'
 
 
 
@@ -213,7 +213,7 @@ tasks.register("verifySdkCameraXNoUiDependencies") {
         }
 
         if (!violations.isEmpty()) {
-            throw new GradleException("CameraX UI dependency verification failed:\\n - " + violations.join("\\n - "))
+            throw new GradleException("SDK tess-two resolution verification failed:\\n - " + violations.join("\\n - "))
         }
     }
 }
