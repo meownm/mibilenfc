@@ -15,14 +15,15 @@ import androidx.camera.core.ImageInfo;
 import androidx.camera.core.ImageProxy;
 import androidx.test.core.app.ApplicationProvider;
 
+import com.example.emrtdreader.sdk.analysis.ScanState;
 import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
 import com.example.emrtdreader.sdk.ocr.OcrEngine;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
-import com.example.emrtdreader.sdk.models.ScanState;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.InOrder;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowLog;
@@ -34,6 +35,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
 public class MrzImageAnalyzerTest {
+    private static final String TD3_MRZ =
+            "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\n" +
+            "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
 
     @Test
     public void analyzeLogsAndNotifiesOnError() {
@@ -203,6 +207,70 @@ public class MrzImageAnalyzerTest {
         assertTrue(closed.get());
     }
 
+    @Test
+    public void analyzeEmitsMlTextAndMrzFoundOnSuccess() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
+                TD3_MRZ,
+                1,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.ML_KIT
+        ));
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener
+        );
+
+        ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 8, 8);
+        analyzer.analyze(imageProxy);
+
+        InOrder inOrder = org.mockito.Mockito.inOrder(listener);
+        inOrder.verify(listener).onOcr(any(), any(), any());
+        inOrder.verify(listener).onScanState(eq(ScanState.ML_TEXT_FOUND), eq("ML Kit OCR text detected"));
+        inOrder.verify(listener).onScanState(eq(ScanState.MRZ_FOUND), eq("MRZ detected"));
+    }
+
+    @Test
+    public void analyzeEmitsTessTextFoundOnFallback() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
+                "",
+                1,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.ML_KIT
+        ));
+        OcrEngine tess = new FixedOcrEngine(new OcrResult(
+                TD3_MRZ,
+                1,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.TESSERACT
+        ));
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                tess,
+                DualOcrRunner.Mode.AUTO_DUAL,
+                0,
+                listener
+        );
+
+        ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 8, 8);
+        analyzer.analyze(imageProxy);
+
+        InOrder inOrder = org.mockito.Mockito.inOrder(listener);
+        inOrder.verify(listener).onOcr(any(), any(), any());
+        inOrder.verify(listener).onScanState(eq(ScanState.TESS_TEXT_FOUND), eq("Tesseract OCR text detected"));
+        inOrder.verify(listener).onScanState(eq(ScanState.MRZ_FOUND), eq("MRZ detected"));
+    }
+
     private static ImageProxy createImageProxy(AtomicBoolean closedFlag, int width, int height) {
         int ySize = width * height;
         int uvSize = (width * height) / 4;
@@ -313,6 +381,33 @@ public class MrzImageAnalyzerTest {
         @Override
         public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
             throw new RuntimeException("ocr failed");
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static class FixedOcrEngine implements OcrEngine {
+        private final OcrResult result;
+
+        private FixedOcrEngine(OcrResult result) {
+            this.result = result;
+        }
+
+        @Override
+        public String getName() {
+            return "fixed";
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+            return result;
         }
 
         @Override

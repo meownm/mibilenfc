@@ -13,9 +13,9 @@ import androidx.annotation.NonNull;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
 
+import com.example.emrtdreader.sdk.analysis.ScanState;
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrResult;
-import com.example.emrtdreader.sdk.models.ScanState;
 import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
 import com.example.emrtdreader.sdk.ocr.MrzAutoDetector;
 import com.example.emrtdreader.sdk.ocr.OcrEngine;
@@ -119,14 +119,20 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             Bitmap roiBmp = Bitmap.createBitmap(safeBitmap, stable.left, stable.top, stable.width(), stable.height());
 
             DualOcrRunner.RunResult rr = runOcr(roiBmp, rotationDeg);
-            if (listener != null) listener.onOcr(rr.ocr, rr.mrz, stable);
+            if (listener != null) {
+                listener.onOcr(rr.ocr, rr.mrz, stable);
+                notifyOcrState(rr.ocr);
+            }
 
             if (rr.mrz != null) {
+                if (listener != null) listener.onScanState(ScanState.MRZ_FOUND, "MRZ detected");
                 MrzResult finalMrz = aggregator.addAndMaybeAggregate(rr.mrz);
                 if (finalMrz != null) {
                     finished.set(true);
                     if (listener != null) listener.onFinalMrz(finalMrz, stable);
                 }
+            } else if (listener != null) {
+                listener.onScanState(ScanState.WAITING, "Waiting for MRZ");
             }
         } catch (Throwable e) {
             if (!closed) {
@@ -188,6 +194,17 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         if (listener != null) {
             listener.onAnalyzerError(message, error);
             listener.onScanState(ScanState.ERROR, message);
+        }
+    }
+
+    private void notifyOcrState(OcrResult ocr) {
+        if (listener == null || ocr == null) return;
+        if (ocr.rawText == null || ocr.rawText.trim().isEmpty()) return;
+
+        if (ocr.engine == OcrResult.Engine.ML_KIT) {
+            listener.onScanState(ScanState.ML_TEXT_FOUND, "ML Kit OCR text detected");
+        } else if (ocr.engine == OcrResult.Engine.TESSERACT) {
+            listener.onScanState(ScanState.TESS_TEXT_FOUND, "Tesseract OCR text detected");
         }
     }
 }
