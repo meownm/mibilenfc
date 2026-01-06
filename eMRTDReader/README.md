@@ -13,7 +13,7 @@ Android app that reads eMRTD (ICAO 9303) documents using:
 - The root project is **not** an Android project; it only declares Android Gradle Plugin versions.
 - CameraX artifacts:
   - SDK uses only camera-core (and camera-camera2 if needed).
-  - App module provides UI/lifecycle dependencies (camera-view, camera-lifecycle) via the CameraX BOM.
+  - App module pins UI/lifecycle dependencies (camera-view, camera-lifecycle) to the same explicit version as camera-core/camera-camera2.
 - Module namespaces:
   - App: `com.example.emrtdreader`
   - SDK: `com.example.emrtdreader.sdk`

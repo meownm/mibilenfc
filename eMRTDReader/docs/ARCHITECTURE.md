@@ -2,7 +2,7 @@
 
 ## Modules
 - `sdk` — reusable MRZ + OCR + NFC + crypto library (Java). Owns CameraX analysis only (camera-core, optional camera-camera2).
-- `app` — demo application using the SDK. Owns UI + lifecycle CameraX pieces (PreviewView, lifecycle binding).
+- `app` — demo application using the SDK. Owns UI + lifecycle CameraX pieces (PreviewView, lifecycle binding) and pins their versions explicitly alongside camera-core.
 
 ## MRZ pipeline (Camera)
 1. CameraX frame (ImageAnalysis)
