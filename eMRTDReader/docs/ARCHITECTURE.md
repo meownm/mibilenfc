@@ -27,12 +27,12 @@ Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (fr
 - Frame delivery is logged at the start of each `analyze` call as `FRAME ts=<epoch_ms> w=<width> h=<height>`. Expect ~15–30 fps depending on the configured analyzer interval; continuous log lines indicate steady camera frame delivery, while gaps suggest dropped or stalled frames.
 
 ## MRZ scan UI feedback
-The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome. Suggested UI interpretations per `ScanState`:
-- `WAITING`: show a neutral/idle state such as “Waiting for MRZ” (no MRZ detected yet).
-- `ML_TEXT_FOUND`: indicate ML Kit OCR text was detected (e.g., purple highlight or “ML OCR text found”).
-- `TESS_TEXT_FOUND`: indicate Tesseract OCR text was detected (e.g., blue highlight or “Tess OCR text found”).
-- `MRZ_FOUND`: highlight success (e.g., green) when a valid MRZ is detected or finalized.
-- `ERROR`: show error feedback (e.g., red) when the analyzer fails or frames stop arriving.
+The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome. The `ScanState`-to-color mapping is:
+- `WAITING`: gray (`@color/overlay_waiting_gray`).
+- `ML_TEXT_FOUND`: purple (`@color/overlay_mlkit_purple`).
+- `TESS_TEXT_FOUND`: blue (`@color/overlay_tess_blue`).
+- `MRZ_FOUND`: green (`@color/overlay_mrz_green`).
+- `ERROR`: red (`@color/overlay_error_red`).
 
 ## NFC pipeline
 - Access key from MRZ (BAC) + PACE best-effort
