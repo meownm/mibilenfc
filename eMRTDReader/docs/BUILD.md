@@ -7,6 +7,8 @@ Android Gradle Plugin versions in `build.gradle`.
 The Android Gradle Plugin (AGP) version is configured in `settings.gradle` under
 `pluginManagement.plugins`, and repository declarations are restricted to
 `settings.gradle` (`pluginManagement.repositories` and `dependencyResolutionManagement.repositories`).
+`build.gradle` must declare matching AGP versions, and the validation script enforces
+this alignment.
 
 ## Build
 ```bash
