@@ -296,6 +296,7 @@ public class DualOcrRunnerTest {
         assertTrue("ML Kit should receive non-binarized pixels", hasNonBinaryPixel(mlBitmap));
         assertTrue("Tesseract should receive binarized pixels", isBinarized(tessBitmap));
         assertTrue("ML and Tesseract inputs should differ", mlBitmap != tessBitmap);
+        assertTrue("Tesseract input should be scaled up", tessBitmap.getWidth() > mlBitmap.getWidth());
     }
 
     private static Bitmap createGradientBitmap(int width, int height) {

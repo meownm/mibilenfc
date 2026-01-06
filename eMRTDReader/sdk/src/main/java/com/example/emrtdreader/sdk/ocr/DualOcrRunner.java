@@ -219,12 +219,11 @@ public final class DualOcrRunner {
     }
 
     private static Bitmap preprocessForMl(Bitmap roi) {
-        return MrzPreprocessor.preprocess(roi);
+        return MrzPreprocessor.preprocessForMl(roi);
     }
 
     private static Bitmap preprocessForTess(Bitmap roi) {
-        Bitmap pre = MrzPreprocessor.preprocess(roi);
-        return AdaptiveThreshold.binarize(pre);
+        return MrzPreprocessor.preprocessForTesseract(roi);
     }
 
     private static MrzResult pickBest(MrzResult a, MrzResult b) {

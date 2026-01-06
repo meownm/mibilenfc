@@ -59,8 +59,8 @@ public final class OcrRouter {
 
         PREPROCESS_EXECUTOR.execute(() -> {
             try {
-                Bitmap mlInput = MrzPreprocessor.preprocess(roi);
-                Bitmap tessInput = AdaptiveThreshold.binarize(mlInput);
+                Bitmap mlInput = MrzPreprocessor.preprocessForMl(roi);
+                Bitmap tessInput = MrzPreprocessor.preprocessForTesseract(roi);
                 OcrMetrics frameMetrics = OcrQuality.compute(roi);
                 runMlThenMaybeTess(ctx, mlKit, tess, mlInput, tessInput, rotationDeg, frameMetrics, callback);
             } catch (Throwable e) {

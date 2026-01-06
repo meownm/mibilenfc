@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 
 import androidx.test.core.app.ApplicationProvider;
 
@@ -151,6 +152,54 @@ public class OcrRouterTest {
         assertNotNull(errorRef.get());
     }
 
+    @Test
+    public void fallbackUsesSplitPreprocessPipelines() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        Bitmap bitmap = createGradientBitmap(8, 8);
+        CapturingOcrEngine mlKit = new CapturingOcrEngine(new OcrResult(
+                "INVALID",
+                6,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.ML_KIT
+        ));
+        CapturingOcrEngine tess = new CapturingOcrEngine(new OcrResult(
+                TD3_VALID_RAW,
+                8,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.TESSERACT
+        ));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<OcrRouter.Result> resultRef = new AtomicReference<>();
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+
+        OcrRouter.runAsync(context, mlKit, tess, bitmap, 0, new OcrRouter.Callback() {
+            @Override
+            public void onSuccess(OcrRouter.Result result, MrzResult mrz) {
+                resultRef.set(result);
+                latch.countDown();
+            }
+
+            @Override
+            public void onFailure(Throwable error) {
+                errorRef.set(error);
+                latch.countDown();
+            }
+        });
+
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        assertNull(errorRef.get());
+        assertNotNull(resultRef.get());
+        assertEquals(OcrResult.Engine.TESSERACT, resultRef.get().engine);
+        Bitmap mlBitmap = mlKit.lastBitmap.get();
+        Bitmap tessBitmap = tess.lastBitmap.get();
+        assertNotNull(mlBitmap);
+        assertNotNull(tessBitmap);
+        assertTrue("ML input should remain non-binarized", hasNonBinaryPixel(mlBitmap));
+        assertTrue("Tesseract input should be binarized", isBinarized(tessBitmap));
+        assertTrue("Tesseract input should be scaled up", tessBitmap.getWidth() > mlBitmap.getWidth());
+    }
+
     private static final class FixedOcrEngine implements OcrEngine {
         private final OcrResult result;
 
@@ -176,6 +225,48 @@ public class OcrRouterTest {
         @Override
         public void close() {
         }
+    }
+
+    private static Bitmap createGradientBitmap(int width, int height) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int value = Math.min(255, (x + y) * 16);
+                bitmap.setPixel(x, y, Color.rgb(value, value / 2, 255 - value));
+            }
+        }
+        return bitmap;
+    }
+
+    private static boolean isBinarized(Bitmap bitmap) {
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                int color = bitmap.getPixel(x, y);
+                int r = Color.red(color);
+                int g = Color.green(color);
+                int b = Color.blue(color);
+                if (r != g || r != b || (r != 0 && r != 255)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasNonBinaryPixel(Bitmap bitmap) {
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int x = 0; x < bitmap.getWidth(); x++) {
+                int color = bitmap.getPixel(x, y);
+                int r = Color.red(color);
+                int g = Color.green(color);
+                int b = Color.blue(color);
+                if (r == g && r == b && (r == 0 || r == 255)) {
+                    continue;
+                }
+                return true;
+            }
+        }
+        return false;
     }
 
     private static final class FlagOcrEngine implements OcrEngine {
@@ -207,6 +298,35 @@ public class OcrRouterTest {
         public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
             called.set(true);
             callback.onSuccess(new OcrResult(text, 5, new OcrMetrics(0, 0, 0), engine));
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static final class CapturingOcrEngine implements OcrEngine {
+        private final OcrResult result;
+        private final AtomicReference<Bitmap> lastBitmap = new AtomicReference<>();
+
+        private CapturingOcrEngine(OcrResult result) {
+            this.result = result;
+        }
+
+        @Override
+        public String getName() {
+            return "capture";
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
+            lastBitmap.set(bitmap);
+            callback.onSuccess(result);
         }
 
         @Override

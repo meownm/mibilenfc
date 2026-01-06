@@ -9,9 +9,9 @@
 2. MRZ zone detection (heuristic)
 3. ROI stabilization (moving average + IoU outlier rejection)
 4. Quality gate (sharpness)
-5. Preprocess (grayscale + contrast) for ML Kit input
-6. Adaptive threshold (local) for Tesseract input (derived from the grayscale/contrast stage)
-7. OCR (ML-first router: ML Kit runs on lightweight preprocessing, validated with conservative MRZ checks; if invalid, Tesseract runs on the heavy binarized bitmap)
+5. Preprocess (grayscale + contrast) for ML Kit input (no binarization)
+6. Tesseract preprocessing: scale up the grayscale/contrast bitmap, then apply adaptive thresholding
+7. OCR (ML-first router: ML Kit runs on the lightweight preprocessing; if invalid, Tesseract runs on the scaled + binarized bitmap)
 8. MRZ normalization + checksum-guided repair (TD3/TD1)
 9. Burst aggregation -> final MRZ
 
