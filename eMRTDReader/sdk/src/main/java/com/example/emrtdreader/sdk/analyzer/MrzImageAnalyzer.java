@@ -15,6 +15,7 @@ import androidx.camera.core.ImageProxy;
 
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrResult;
+import com.example.emrtdreader.sdk.models.ScanState;
 import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
 import com.example.emrtdreader.sdk.ocr.MrzAutoDetector;
 import com.example.emrtdreader.sdk.ocr.OcrEngine;
@@ -38,6 +39,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         void onOcr(OcrResult ocr, MrzResult bestSingle, Rect roi);
         void onFinalMrz(MrzResult finalMrz, Rect roi);
         void onAnalyzerError(String message, Throwable error);
+        default void onScanState(ScanState state, String message) {}
     }
 
     private final Context appContext;
@@ -96,14 +98,11 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         try {
             int rotationDeg = image.getImageInfo().getRotationDegrees();
             Bitmap bitmap = imageProxyToBitmap(image);
-            if (bitmap == null) {
-                throw new IllegalStateException("Failed to convert ImageProxy to Bitmap");
-            }
             Bitmap safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
             image.close();
             closed = true;
             if (safeBitmap == null) {
-                throw new IllegalStateException("Failed to copy bitmap for analysis");
+                throw new IllegalStateException("Bitmap copy failed");
             }
 
             if (rotationDeg != 0) {
@@ -119,7 +118,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             Rect stable = rectAverager.update(detected, safeBitmap.getWidth(), safeBitmap.getHeight());
             Bitmap roiBmp = Bitmap.createBitmap(safeBitmap, stable.left, stable.top, stable.width(), stable.height());
 
-            DualOcrRunner.RunResult rr = DualOcrRunner.run(appContext, mode, mlKitEngine, tessEngine, roiBmp, rotationDeg);
+            DualOcrRunner.RunResult rr = runOcr(roiBmp, rotationDeg);
             if (listener != null) listener.onOcr(rr.ocr, rr.mrz, stable);
 
             if (rr.mrz != null) {
@@ -133,10 +132,23 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             if (!closed) {
                 image.close();
             }
-            Log.e("MRZ", "Analyzer error while processing frame", e);
-            if (listener != null) {
-                listener.onAnalyzerError("Analyzer error while processing frame", e);
+            String message = (e instanceof IllegalStateException) ? e.getMessage() : "Analyzer error while processing frame";
+            if (message == null || message.trim().isEmpty()) {
+                message = "Analyzer error while processing frame";
             }
+            notifyError(message, e);
+        }
+    }
+
+    private DualOcrRunner.RunResult runOcr(Bitmap roiBmp, int rotationDeg) {
+        try {
+            return DualOcrRunner.run(appContext, mode, mlKitEngine, tessEngine, roiBmp, rotationDeg);
+        } catch (Throwable e) {
+            String cause = e.getMessage();
+            if (cause == null || cause.trim().isEmpty()) {
+                cause = "unknown error";
+            }
+            throw new IllegalStateException("OCR failed: " + cause, e);
         }
     }
 
@@ -160,10 +172,22 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
                 yuvImage.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 90, out);
                 byte[] bytes = out.toByteArray();
-                return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                Bitmap decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                if (decoded == null) {
+                    throw new IllegalStateException("Image conversion failed");
+                }
+                return decoded;
             }
         } catch (Throwable t) {
-            return null;
+            throw new IllegalStateException("Image conversion failed", t);
+        }
+    }
+
+    private void notifyError(String message, Throwable error) {
+        Log.e("MRZ", message, error);
+        if (listener != null) {
+            listener.onAnalyzerError(message, error);
+            listener.onScanState(ScanState.ERROR, message);
         }
     }
 }

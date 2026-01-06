@@ -19,6 +19,7 @@ import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
 import com.example.emrtdreader.sdk.ocr.OcrEngine;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
+import com.example.emrtdreader.sdk.models.ScanState;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -64,6 +65,7 @@ public class MrzImageAnalyzerTest {
         analyzer.analyze(imageProxy);
 
         verify(listener).onAnalyzerError(eq("Analyzer error while processing frame"), any(RuntimeException.class));
+        verify(listener).onScanState(eq(ScanState.ERROR), eq("Analyzer error while processing frame"));
         assertTrue(closed.get());
 
         List<ShadowLog.LogItem> logs = ShadowLog.getLogsForTag("MRZ");
@@ -131,7 +133,8 @@ public class MrzImageAnalyzerTest {
 
         analyzer.analyze(failingProxy);
 
-        verify(listener).onAnalyzerError(eq("Analyzer error while processing frame"), any(IllegalStateException.class));
+        verify(listener).onAnalyzerError(eq("Image conversion failed"), any(IllegalStateException.class));
+        verify(listener).onScanState(eq(ScanState.ERROR), eq("Image conversion failed"));
         assertTrue(closed.get());
 
         ImageProxy okProxy = createImageProxy(new AtomicBoolean(false), 8, 8);
@@ -171,7 +174,32 @@ public class MrzImageAnalyzerTest {
 
         analyzer.analyze(imageProxy);
 
-        verify(listener).onAnalyzerError(eq("Analyzer error while processing frame"), any(IllegalStateException.class));
+        verify(listener).onAnalyzerError(eq("Image conversion failed"), any(IllegalStateException.class));
+        verify(listener).onScanState(eq(ScanState.ERROR), eq("Image conversion failed"));
+        assertTrue(closed.get());
+    }
+
+    @Test
+    public void analyzeReportsErrorWhenOcrFails() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new ThrowingOcrEngine(),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener
+        );
+
+        AtomicBoolean closed = new AtomicBoolean(false);
+        ImageProxy imageProxy = createImageProxy(closed, 8, 8);
+
+        analyzer.analyze(imageProxy);
+
+        verify(listener).onAnalyzerError(eq("OCR failed: ocr failed"), any(IllegalStateException.class));
+        verify(listener).onScanState(eq(ScanState.ERROR), eq("OCR failed: ocr failed"));
         assertTrue(closed.get());
     }
 
@@ -264,6 +292,27 @@ public class MrzImageAnalyzerTest {
         public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
             called.set(true);
             return new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT);
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static class ThrowingOcrEngine implements OcrEngine {
+        @Override
+        public String getName() {
+            return "throwing";
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+            throw new RuntimeException("ocr failed");
         }
 
         @Override
