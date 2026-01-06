@@ -25,6 +25,7 @@ Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (fr
 - OCR is dispatched asynchronously via callbacks; the analyzer thread never blocks on OCR completion. Callbacks may arrive on background threads and should be treated as non-UI.
 - Any conversion failure or OCR processing exception triggers the analyzer error callback, emits `ScanState.ERROR`, and still closes the `ImageProxy` if it has not been closed yet.
 - Frame delivery is logged at the start of each `analyze` call as `FRAME ts=<epoch_ms> w=<width> h=<height>`. Expect ~15–30 fps depending on the configured analyzer interval; continuous log lines indicate steady camera frame delivery, while gaps suggest dropped or stalled frames.
+- After bitmap conversion, `FRAME_STATS` logs capture per-frame metrics computed by `FrameStats` (mean brightness, contrast/stddev, Laplacian variance sharpness, and a local-mean residual noise estimate). These metrics are intended for diagnostics and for tuning thresholds that gate MRZ capture quality.
 
 ## MRZ scan UI feedback
 The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome. The `ScanState`-to-color mapping is:

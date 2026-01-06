@@ -172,6 +172,52 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
+    public void analyzeLogsFrameStatsForSyntheticBitmap() throws InterruptedException {
+        ShadowLog.clear();
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createCheckerboardBitmap(32, 32))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 32, 32));
+
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+
+        List<ShadowLog.LogItem> logs = ShadowLog.getLogsForTag("MRZ");
+        boolean foundStats = false;
+        for (ShadowLog.LogItem item : logs) {
+            if (item.msg != null && item.msg.startsWith("FRAME_STATS")) {
+                foundStats = true;
+                assertTrue(!item.msg.contains("NaN"));
+                assertTrue(item.msg.contains("mean="));
+                assertTrue(item.msg.contains("contrast="));
+                assertTrue(item.msg.contains("sharp="));
+                assertTrue(item.msg.contains("noise="));
+                break;
+            }
+        }
+        assertTrue(foundStats);
+    }
+
+    @Test
     public void analyzeKeepsOcrWorkingAfterCloseWithRotation() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         AtomicBoolean closed = new AtomicBoolean(false);
@@ -633,6 +679,17 @@ public class MrzImageAnalyzerTest {
         for (int x = 0; x < width; x += 6) {
             paint.setColor((x / 6) % 2 == 0 ? Color.BLACK : Color.DKGRAY);
             canvas.drawRect(x, bandTop, x + 3, bandBottom, paint);
+        }
+        return bitmap;
+    }
+
+    private static Bitmap createCheckerboardBitmap(int width, int height) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                boolean even = ((x + y) % 2 == 0);
+                bitmap.setPixel(x, y, even ? Color.WHITE : Color.BLACK);
+            }
         }
         return bitmap;
     }

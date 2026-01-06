@@ -15,12 +15,14 @@ import com.example.emrtdreader.sdk.analysis.ScanState;
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrResult;
 import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
+import com.example.emrtdreader.sdk.ocr.FrameStats;
 import com.example.emrtdreader.sdk.ocr.MrzAutoDetector;
 import com.example.emrtdreader.sdk.ocr.OcrRouter;
 import com.example.emrtdreader.sdk.ocr.OcrEngine;
 import com.example.emrtdreader.sdk.ocr.RectAverager;
 import com.example.emrtdreader.sdk.utils.MrzBurstAggregator;
 
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -124,6 +126,13 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                 safeBitmap = Bitmap.createBitmap(safeBitmap, 0, 0, safeBitmap.getWidth(), safeBitmap.getHeight(), m, true);
                 rotationDeg = 0;
             }
+
+            FrameStats stats = FrameStats.compute(safeBitmap);
+            log("FRAME_STATS ts=" + System.currentTimeMillis()
+                    + " mean=" + String.format(Locale.US, "%.1f", stats.brightness)
+                    + " contrast=" + String.format(Locale.US, "%.1f", stats.contrast)
+                    + " sharp=" + String.format(Locale.US, "%.1f", stats.sharpness)
+                    + " noise=" + String.format(Locale.US, "%.2f", stats.noise));
 
             Rect detected = MrzAutoDetector.detect(safeBitmap);
             if (detected == null) return;
