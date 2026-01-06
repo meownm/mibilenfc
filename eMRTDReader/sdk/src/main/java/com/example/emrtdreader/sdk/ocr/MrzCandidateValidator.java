@@ -19,6 +19,34 @@ public final class MrzCandidateValidator {
         return true;
     }
 
+    public static int score(String text) {
+        String normalized = normalize(text);
+        if (normalized.isEmpty()) {
+            return 0;
+        }
+        int valid = 0;
+        int invalid = 0;
+        for (int i = 0; i < normalized.length(); i++) {
+            char c = normalized.charAt(i);
+            if (c == '<' || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')) {
+                valid++;
+            } else {
+                invalid++;
+            }
+        }
+        int score = valid - invalid;
+        if (normalized.contains("<<")) {
+            score += 20;
+        }
+        if (normalized.length() >= 44) {
+            score += 20;
+        }
+        if (isValid(normalized)) {
+            score += 1000;
+        }
+        return score;
+    }
+
     public static String normalize(String text) {
         if (text == null) return "";
         String stripped = text.replaceAll("\\s", "");
