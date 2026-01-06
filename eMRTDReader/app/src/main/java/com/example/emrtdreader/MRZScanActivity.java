@@ -272,7 +272,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
             }
             if (ocr != null) {
                 appendLogLine(buildFrameLogLine(ocr, bestSingle));
-                appendRawOcrLog("RAW OCR (" + ocr.engine.name() + "):\n" + normalizeRawOcrText(ocr.rawText));
+                appendRawOcrLines(ocr);
                 metricsTextView.setText(
                         "Mode: " + mode.name() +
                         " | " + ocr.elapsedMs + "ms" +
@@ -327,7 +327,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     public void onAnalyzerError(String message, Throwable error) {
         runOnUiThread(() -> {
             mrzTextView.setText("Analyzer error: " + message);
-            appendLogLine("Analyzer error: " + message);
+            appendLogLine("ERROR: Analyzer error: " + message);
             Toast.makeText(this, "Analyzer error: " + message, Toast.LENGTH_LONG).show();
         });
     }
@@ -465,13 +465,18 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         return rawText;
     }
 
-    private void appendRawOcrLog(String message) {
+    private void appendRawOcrLines(OcrResult ocr) {
         if (logTextView == null) {
             return;
         }
-        logTextView.append("\n" + message);
-        if (logScrollView != null) {
-            logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN));
+        if (ocr == null) {
+            return;
+        }
+        String prefix = ocr.engine == OcrResult.Engine.ML_KIT ? "ML:" : "TESS:";
+        String normalized = normalizeRawOcrText(ocr.rawText);
+        String[] lines = normalized.split("\\R");
+        for (String line : lines) {
+            appendLogLine(prefix + " " + line);
         }
     }
 
