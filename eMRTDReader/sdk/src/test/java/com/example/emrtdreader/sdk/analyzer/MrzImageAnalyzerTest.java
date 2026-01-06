@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -115,6 +116,44 @@ public class MrzImageAnalyzerTest {
         assertTrue(immutableSeen.get());
         verify(listener).onOcr(any(), any(), any());
         assertTrue(closed.get());
+    }
+
+    @Test
+    public void analyzeLogsFrameOnEveryCallEvenWhenIntervalSkips() {
+        ShadowLog.clear();
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                1000,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+
+        verify(listener, times(1)).onOcr(any(), any(), any());
+
+        List<ShadowLog.LogItem> logs = ShadowLog.getLogsForTag("MRZ");
+        int frameLogs = 0;
+        for (ShadowLog.LogItem item : logs) {
+            if (item.msg != null && item.msg.startsWith("FRAME ts=")
+                    && item.msg.contains("w=320")
+                    && item.msg.contains("h=240")) {
+                frameLogs++;
+            }
+        }
+        assertTrue(frameLogs >= 2);
     }
 
     @Test

@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * - aggregates MRZ across bursts
  */
 public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
+    private static final String TAG = "MRZ";
 
     public interface Listener {
         void onOcr(OcrResult ocr, MrzResult bestSingle, Rect roi);
@@ -96,6 +97,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             image.close();
             return;
         }
+        log("FRAME ts=" + System.currentTimeMillis() + " w=" + image.getWidth() + " h=" + image.getHeight());
         long now = System.currentTimeMillis();
         if (now - lastTs < intervalMs) {
             image.close();
@@ -173,11 +175,15 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     }
 
     private void notifyError(String message, Throwable error) {
-        Log.e("MRZ", message, error);
+        Log.e(TAG, message, error);
         if (listener != null) {
             listener.onAnalyzerError(message, error);
             listener.onScanState(ScanState.ERROR, message);
         }
+    }
+
+    private void log(String message) {
+        Log.d(TAG, message);
     }
 
     private void notifyOcrState(OcrResult ocr) {

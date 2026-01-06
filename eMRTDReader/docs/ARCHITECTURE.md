@@ -23,6 +23,7 @@ Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (fr
 - The converter path avoids manual plane buffer access and NV21/JPEG round-trips, preserving per-pixel fidelity while keeping the MRZ band legible in low-light or overexposed frames.
 - The `ImageProxy` is closed right after the safe bitmap copy completes, before MRZ detection or OCR begins.
 - Any conversion failure or OCR processing exception triggers the analyzer error callback, emits `ScanState.ERROR`, and still closes the `ImageProxy` if it has not been closed yet.
+- Frame delivery is logged at the start of each `analyze` call as `FRAME ts=<epoch_ms> w=<width> h=<height>`. Expect ~15–30 fps depending on the configured analyzer interval; continuous log lines indicate steady camera frame delivery, while gaps suggest dropped or stalled frames.
 
 ## MRZ scan UI feedback
 The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome. Suggested UI interpretations per `ScanState`:
