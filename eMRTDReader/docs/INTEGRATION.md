@@ -24,6 +24,9 @@ dependencies {
 - ML Kit only
 - Tesseract only
 
+## OCR threading
+`MrzImageAnalyzer` and the OCR engines use a callback-based contract. OCR results and errors are delivered asynchronously (often on background threads), so UI layers should marshal updates onto the main thread as needed. The analyzer never blocks on OCR completion, allowing continuous frame delivery.
+
 ## Passive authentication
 The SDK verifies SOD signatures and data group hashes using Bouncy Castle. Ensure the
 `sdk` module keeps the Bouncy Castle provider and certificate converter classes on the

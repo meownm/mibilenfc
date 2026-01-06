@@ -6,8 +6,13 @@ import android.graphics.Bitmap;
 import com.example.emrtdreader.sdk.models.OcrResult;
 
 public interface OcrEngine {
+    interface Callback {
+        void onSuccess(OcrResult result);
+        void onFailure(Throwable error);
+    }
+
     String getName();
     boolean isAvailable(Context ctx);
-    OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees);
+    void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback);
     void close();
 }

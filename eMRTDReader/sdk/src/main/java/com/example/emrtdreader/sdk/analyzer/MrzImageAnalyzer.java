@@ -44,6 +44,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     private final MrzBurstAggregator aggregator;
     private final RectAverager rectAverager;
     private final AtomicBoolean finished = new AtomicBoolean(false);
+    private final AtomicBoolean ocrInFlight = new AtomicBoolean(false);
     private final YuvBitmapConverter yuvBitmapConverter;
 
     private volatile OcrEngine mlKitEngine;
@@ -129,22 +130,11 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             Rect stable = rectAverager.update(detected, safeBitmap.getWidth(), safeBitmap.getHeight());
             Bitmap roiBmp = Bitmap.createBitmap(safeBitmap, stable.left, stable.top, stable.width(), stable.height());
 
-            DualOcrRunner.RunResult rr = runOcr(roiBmp, rotationDeg);
-            if (listener != null) {
-                listener.onOcr(rr.ocr, rr.mrz, stable);
-                notifyOcrState(rr.ocr);
+            if (!ocrInFlight.compareAndSet(false, true)) {
+                return;
             }
 
-            if (rr.mrz != null) {
-                if (listener != null) listener.onScanState(ScanState.MRZ_FOUND, "MRZ detected");
-                MrzResult finalMrz = aggregator.addAndMaybeAggregate(rr.mrz);
-                if (finalMrz != null) {
-                    finished.set(true);
-                    if (listener != null) listener.onFinalMrz(finalMrz, stable);
-                }
-            } else if (listener != null) {
-                listener.onScanState(ScanState.WAITING, "Waiting for MRZ");
-            }
+            runOcrAsync(roiBmp, rotationDeg, stable);
         } catch (Throwable e) {
             if (!closed) {
                 image.close();
@@ -157,16 +147,43 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         }
     }
 
-    private DualOcrRunner.RunResult runOcr(Bitmap roiBmp, int rotationDeg) {
-        try {
-            return DualOcrRunner.run(appContext, mode, mlKitEngine, tessEngine, roiBmp, rotationDeg);
-        } catch (Throwable e) {
-            String cause = e.getMessage();
-            if (cause == null || cause.trim().isEmpty()) {
-                cause = "unknown error";
-            }
-            throw new IllegalStateException("OCR failed: " + cause, e);
-        }
+    private void runOcrAsync(Bitmap roiBmp, int rotationDeg, Rect stable) {
+        DualOcrRunner.runAsync(appContext, mode, mlKitEngine, tessEngine, roiBmp, rotationDeg,
+                new DualOcrRunner.RunCallback() {
+                    @Override
+                    public void onSuccess(DualOcrRunner.RunResult rr) {
+                        ocrInFlight.set(false);
+                        if (finished.get()) {
+                            return;
+                        }
+
+                        if (listener != null) {
+                            listener.onOcr(rr.ocr, rr.mrz, stable);
+                            notifyOcrState(rr.ocr);
+                        }
+
+                        if (rr.mrz != null) {
+                            if (listener != null) listener.onScanState(ScanState.MRZ_FOUND, "MRZ detected");
+                            MrzResult finalMrz = aggregator.addAndMaybeAggregate(rr.mrz);
+                            if (finalMrz != null) {
+                                finished.set(true);
+                                if (listener != null) listener.onFinalMrz(finalMrz, stable);
+                            }
+                        } else if (listener != null) {
+                            listener.onScanState(ScanState.WAITING, "Waiting for MRZ");
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(Throwable error) {
+                        ocrInFlight.set(false);
+                        String cause = error != null ? error.getMessage() : null;
+                        if (cause == null || cause.trim().isEmpty()) {
+                            cause = "unknown error";
+                        }
+                        notifyError("OCR failed: " + cause, error);
+                    }
+                });
     }
 
     private Bitmap imageProxyToBitmap(ImageProxy image) {
