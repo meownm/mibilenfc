@@ -6,8 +6,8 @@ public final class PreprocessParamSelection {
     private PreprocessParamSelection() {
     }
 
-    public static int scoreText(String text) {
-        return MrzCandidateValidator.score(text);
+    public static double scoreText(String text) {
+        return MrzScore.score(text);
     }
 
     public static int pickBestIndex(List<String> texts) {
@@ -15,9 +15,9 @@ public final class PreprocessParamSelection {
             return -1;
         }
         int bestIndex = -1;
-        int bestScore = Integer.MIN_VALUE;
+        double bestScore = Double.NEGATIVE_INFINITY;
         for (int i = 0; i < texts.size(); i++) {
-            int score = scoreText(texts.get(i));
+            double score = scoreText(texts.get(i));
             if (score > bestScore) {
                 bestScore = score;
                 bestIndex = i;

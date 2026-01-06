@@ -80,7 +80,8 @@ public final class OcrRouter {
             @Override
             public void onSuccess(OcrResult result) {
                 String mlText = result != null ? result.rawText : "";
-                if (MrzCandidateValidator.isValid(mlText)) {
+                double mlScore = MrzScore.score(mlText);
+                if (mlScore >= 1.0) {
                     publishResult(result != null ? result.engine : OcrResult.Engine.ML_KIT,
                             mlText,
                             "",
@@ -90,12 +91,12 @@ public final class OcrRouter {
                             callback);
                     return;
                 }
-                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, mlText, callback);
+                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, result, mlText, callback);
             }
 
             @Override
             public void onFailure(Throwable error) {
-                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, "", callback);
+                runTessFallback(ctx, tess, roi, rotationDeg, frameMetrics, null, "", callback);
             }
         });
     }
@@ -105,9 +106,10 @@ public final class OcrRouter {
                                         Bitmap roi,
                                         int rotationDeg,
                                         OcrMetrics frameMetrics,
+                                        OcrResult mlResult,
                                         String mlText,
                                         Callback callback) {
-        runTessCandidateLoop(ctx, tess, roi, rotationDeg, frameMetrics, mlText, callback);
+        runTessCandidateLoop(ctx, tess, roi, rotationDeg, frameMetrics, mlResult, mlText, callback);
     }
 
     private static void runTessCandidateLoop(Context ctx,
@@ -115,6 +117,7 @@ public final class OcrRouter {
                                              Bitmap roi,
                                              int rotationDeg,
                                              OcrMetrics frameMetrics,
+                                             OcrResult mlResult,
                                              String mlText,
                                              Callback callback) {
         final java.util.List<PreprocessParams> candidates = PreprocessParamSet.getCandidates();
@@ -128,18 +131,30 @@ public final class OcrRouter {
                 if (index >= candidates.size()) {
                     int bestIndex = PreprocessParamSelection.pickBestIndex(texts);
                     if (bestIndex < 0) {
+                        CandidateSelection selection = pickBestCandidate(mlResult, null, mlText, "");
+                        if (selection.finalText != null && !selection.finalText.isEmpty()) {
+                            publishResult(selection.engine,
+                                    mlText,
+                                    "",
+                                    selection.finalText,
+                                    frameMetrics,
+                                    selection.elapsedMs,
+                                    callback);
+                            return;
+                        }
                         Throwable error = lastError.get();
                         callback.onFailure(error != null ? error : new IllegalStateException("OCR failed"));
                         return;
                     }
                     OcrResult bestResult = results.get(bestIndex);
                     String tessText = texts.get(bestIndex);
-                    publishResult(bestResult != null ? bestResult.engine : OcrResult.Engine.TESSERACT,
+                    CandidateSelection selection = pickBestCandidate(mlResult, bestResult, mlText, tessText);
+                    publishResult(selection.engine,
                             mlText,
                             tessText,
-                            tessText,
+                            selection.finalText,
                             frameMetrics,
-                            bestResult != null ? bestResult.elapsedMs : 0L,
+                            selection.elapsedMs,
                             callback);
                     return;
                 }
@@ -210,6 +225,56 @@ public final class OcrRouter {
     private interface EngineCallback {
         void onSuccess(OcrResult result);
         void onFailure(Throwable error);
+    }
+
+    static CandidateSelection pickBestCandidate(OcrResult mlResult,
+                                                OcrResult tessResult,
+                                                String mlText,
+                                                String tessText) {
+        double mlScore = MrzScore.score(mlText);
+        double tessScore = MrzScore.score(tessText);
+        boolean hasMlText = mlText != null && !mlText.isEmpty();
+        boolean hasTessText = tessText != null && !tessText.isEmpty();
+
+        if (!hasMlText && !hasTessText) {
+            return new CandidateSelection(OcrResult.Engine.UNKNOWN, "", 0L, 0.0);
+        }
+        if (!hasTessText) {
+            return new CandidateSelection(engineOrDefault(mlResult, OcrResult.Engine.ML_KIT), mlText,
+                    elapsedOrZero(mlResult), mlScore);
+        }
+        if (!hasMlText) {
+            return new CandidateSelection(engineOrDefault(tessResult, OcrResult.Engine.TESSERACT), tessText,
+                    elapsedOrZero(tessResult), tessScore);
+        }
+        if (tessScore > mlScore) {
+            return new CandidateSelection(engineOrDefault(tessResult, OcrResult.Engine.TESSERACT), tessText,
+                    elapsedOrZero(tessResult), tessScore);
+        }
+        return new CandidateSelection(engineOrDefault(mlResult, OcrResult.Engine.ML_KIT), mlText,
+                elapsedOrZero(mlResult), mlScore);
+    }
+
+    private static OcrResult.Engine engineOrDefault(OcrResult result, OcrResult.Engine fallback) {
+        return result != null ? result.engine : fallback;
+    }
+
+    private static long elapsedOrZero(OcrResult result) {
+        return result != null ? result.elapsedMs : 0L;
+    }
+
+    static final class CandidateSelection {
+        final OcrResult.Engine engine;
+        final String finalText;
+        final long elapsedMs;
+        final double score;
+
+        private CandidateSelection(OcrResult.Engine engine, String finalText, long elapsedMs, double score) {
+            this.engine = engine;
+            this.finalText = finalText;
+            this.elapsedMs = elapsedMs;
+            this.score = score;
+        }
     }
 
     private static final class NamedThreadFactory implements ThreadFactory {

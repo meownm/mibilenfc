@@ -20,7 +20,7 @@ dependencies {
 - Internet: optional (for Tesseract traineddata auto-download)
 
 ## OCR modes
-- Auto (ML-first): ML Kit runs on lightweight MRZ preprocessing (no binarization); if the text fails conservative MRZ validation (length ≥ 44, allowed charset, contains `<<`), Tesseract runs on a scaled + binarized bitmap
+- Auto (ML-first): ML Kit runs on lightweight MRZ preprocessing (no binarization); if the text does not achieve a perfect MRZ score, Tesseract runs on a scaled + binarized bitmap and the higher-scoring candidate is selected
 - ML Kit only
 - Tesseract only
 
@@ -32,7 +32,16 @@ When Auto mode falls back to Tesseract, the SDK runs a fixed candidate set (`Pre
 - (block size 21, C 9, scale 2.5, blur 1)
 - (block size 13, C 3, scale 1.75, blur 0)
 
-For each candidate, the same ROI frame is preprocessed, Tesseract runs, and the normalized text is scored using MRZ validity heuristics (length, allowed charset, `<<` marker, and a strong bonus for fully valid MRZ). The highest score is selected as the final Tesseract result.
+For each candidate, the same ROI frame is preprocessed, Tesseract runs, and the normalized text is scored using the MRZ scoring rules below. The highest score is selected as the final Tesseract result (and is compared against the ML Kit score in Auto mode).
+
+## MRZ scoring rules
+The MRZ scorer parses OCR text into TD3 lines and assigns a normalized score (0..1):
+
+- Parse OCR text into exactly two MRZ lines (TD3). If one 88-character line is present, it is split into two 44-character lines.
+- Enforce strict formatting: line count = 2, line length = 44, allowed charset `[A-Z0-9<]`.
+- Compute the four TD3 checksum validations and return the ratio of successful checks (`validChecks / 4`).
+
+If strict formatting fails, the score is `0.0`.
 
 ## OCR threading
 `MrzImageAnalyzer` and the OCR engines use a callback-based contract. OCR results and errors are delivered asynchronously (often on background threads), so UI layers should marshal updates onto the main thread as needed. The analyzer never blocks on OCR completion, allowing continuous frame delivery.
