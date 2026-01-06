@@ -21,6 +21,20 @@ import org.robolectric.annotation.Config;
 @Config(sdk = 34)
 public class YuvBitmapConverterTest {
     @Test
+    public void toBitmapUsesConverterOutputWhenWithinRange() {
+        Bitmap sample = createSampleFrame(160, 120, Color.rgb(140, 140, 140), Color.rgb(220, 220, 220));
+        YuvBitmapConverter converter = new YuvBitmapConverter((image, bitmap) -> {
+            assertTrue(bitmap.isMutable());
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawBitmap(sample, 0, 0, null);
+        });
+
+        Bitmap converted = converter.toBitmap(createImageProxy(160, 120));
+
+        assertTrue(converted.getPixel(4, 4) == sample.getPixel(4, 4));
+    }
+
+    @Test
     public void toBitmapNormalizesDarkFrameAndKeepsTextReadable() {
         Bitmap darkFrame = createSampleFrame(320, 240, Color.rgb(30, 30, 30), Color.WHITE);
         YuvBitmapConverter converter = new YuvBitmapConverter((image, bitmap) -> {
@@ -62,6 +76,18 @@ public class YuvBitmapConverterTest {
         float contrast = contrastBetweenRegions(converted);
 
         assertTrue(contrast < 20f);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void toBitmapThrowsWhenImageMissing() {
+        ImageProxy imageProxy = mock(ImageProxy.class);
+        when(imageProxy.getWidth()).thenReturn(8);
+        when(imageProxy.getHeight()).thenReturn(8);
+        when(imageProxy.getImage()).thenReturn(null);
+        YuvBitmapConverter converter = new YuvBitmapConverter((image, bitmap) -> {
+        });
+
+        converter.toBitmap(imageProxy);
     }
 
     private static ImageProxy createImageProxy(int width, int height) {

@@ -350,6 +350,32 @@ public class MrzImageAnalyzerTest {
         verify(listener).onFinalMrz(any(), any());
     }
 
+    @Test
+    public void analyzeDetectsMrzAfterBrightnessNormalization() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        AtomicBoolean ocrCalled = new AtomicBoolean(false);
+        OcrEngine mlKit = new ReadableOcrEngine(ocrCalled);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createDarkMrzSampleBitmap(320, 240))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+
+        assertTrue(ocrCalled.get());
+        verify(listener, atLeastOnce()).onScanState(eq(ScanState.MRZ_FOUND), eq("MRZ detected"));
+        verify(listener).onFinalMrz(any(), any());
+    }
+
     private static ImageProxy createImageProxy(AtomicBoolean closedFlag, int width, int height) {
         ImageProxy imageProxy = mock(ImageProxy.class);
         ImageInfo imageInfo = mock(ImageInfo.class);
@@ -394,6 +420,20 @@ public class MrzImageAnalyzerTest {
         int bandBottom = (int) (height * 0.9f);
         for (int x = 0; x < width; x += 6) {
             paint.setColor((x / 6) % 2 == 0 ? Color.BLACK : Color.DKGRAY);
+            canvas.drawRect(x, bandTop, x + 3, bandBottom, paint);
+        }
+        return bitmap;
+    }
+
+    private static Bitmap createDarkMrzSampleBitmap(int width, int height) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.drawColor(Color.rgb(20, 20, 20));
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int bandTop = (int) (height * 0.7f);
+        int bandBottom = (int) (height * 0.9f);
+        for (int x = 0; x < width; x += 6) {
+            paint.setColor((x / 6) % 2 == 0 ? Color.WHITE : Color.LTGRAY);
             canvas.drawRect(x, bandTop, x + 3, bandBottom, paint);
         }
         return bitmap;
@@ -541,6 +581,89 @@ public class MrzImageAnalyzerTest {
 
         @Override
         public void close() {
+        }
+    }
+
+    private static class ReadableOcrEngine implements OcrEngine {
+        private final AtomicBoolean called;
+
+        private ReadableOcrEngine(AtomicBoolean called) {
+            this.called = called;
+        }
+
+        @Override
+        public String getName() {
+            return "readable";
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+            float avg = averageLuma(bitmap);
+            float contrast = contrastBetweenRegions(bitmap);
+            called.set(true);
+            if (avg >= YuvBitmapConverter.MIN_AVG_LUMA
+                    && avg <= YuvBitmapConverter.MAX_AVG_LUMA
+                    && contrast >= 60f) {
+                return new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                );
+            }
+            return new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT);
+        }
+
+        @Override
+        public void close() {
+        }
+
+        private static float averageLuma(Bitmap bitmap) {
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            int step = Math.max(1, Math.min(width, height) / 50);
+            long sum = 0L;
+            long count = 0L;
+            for (int y = 0; y < height; y += step) {
+                for (int x = 0; x < width; x += step) {
+                    int color = bitmap.getPixel(x, y);
+                    int luma = (Color.red(color) + Color.green(color) + Color.blue(color)) / 3;
+                    sum += luma;
+                    count++;
+                }
+            }
+            return count == 0L ? 0f : (float) sum / (float) count;
+        }
+
+        private static float contrastBetweenRegions(Bitmap bitmap) {
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            int bandTop = (int) (height * 0.7f);
+            int bandBottom = (int) (height * 0.9f);
+            float bandLuma = averageLuma(bitmap, bandTop, bandBottom);
+            float backgroundLuma = averageLuma(bitmap, 0, bandTop / 2);
+            return Math.abs(bandLuma - backgroundLuma);
+        }
+
+        private static float averageLuma(Bitmap bitmap, int top, int bottom) {
+            int width = bitmap.getWidth();
+            int step = Math.max(1, width / 50);
+            long sum = 0L;
+            long count = 0L;
+            for (int y = top; y < bottom; y += step) {
+                for (int x = 0; x < width; x += step) {
+                    int color = bitmap.getPixel(x, y);
+                    int luma = (Color.red(color) + Color.green(color) + Color.blue(color)) / 3;
+                    sum += luma;
+                    count++;
+                }
+            }
+            return count == 0L ? 0f : (float) sum / (float) count;
         }
     }
 }

@@ -12,6 +12,11 @@ import android.media.Image;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.internal.YuvToRgbConverter;
 
+/**
+ * Converts {@link ImageProxy} YUV frames to mutable ARGB bitmaps using CameraX's
+ * {@link androidx.camera.core.internal.YuvToRgbConverter}, then normalizes brightness to keep
+ * text readable for MRZ detection and OCR.
+ */
 final class YuvBitmapConverter {
     static final int MIN_AVG_LUMA = 70;
     static final int MAX_AVG_LUMA = 200;
