@@ -65,6 +65,43 @@ public class MRZScanActivityLogTest {
         }
     }
 
+    @Test
+    public void ocrLinesAppendWithPrefixesInOrder() {
+        try (ActivityScenario<MRZScanActivity> scenario = ActivityScenario.launch(createIntent())) {
+            scenario.onActivity(activity -> {
+                OcrResult mlOcr = new OcrResult("LINE1\nLINE2", 75L, new OcrMetrics(60.0, 14.0, 3.0), OcrResult.Engine.ML_KIT);
+                activity.onOcr(mlOcr, null, new Rect(0, 0, 5, 5));
+                OcrResult tessOcr = new OcrResult("TESSLINE", 90L, new OcrMetrics(50.0, 10.0, 2.0), OcrResult.Engine.TESSERACT);
+                activity.onOcr(tessOcr, null, new Rect(0, 0, 5, 5));
+
+                TextView logView = activity.findViewById(R.id.logTextView);
+                assertNotNull(logView);
+                String logText = logView.getText().toString();
+                int mlLine1 = logText.indexOf("ML: LINE1");
+                int mlLine2 = logText.indexOf("ML: LINE2");
+                int tessLine = logText.indexOf("TESS: TESSLINE");
+                assertTrue("Expected ML prefix for first line", mlLine1 >= 0);
+                assertTrue("Expected ML prefix for second line", mlLine2 >= 0);
+                assertTrue("Expected TESS prefix for line", tessLine >= 0);
+                assertTrue("Expected ML lines before TESS line", mlLine1 < mlLine2 && mlLine2 < tessLine);
+            });
+        }
+    }
+
+    @Test
+    public void errorLogLineUsesErrorPrefix() {
+        try (ActivityScenario<MRZScanActivity> scenario = ActivityScenario.launch(createIntent())) {
+            scenario.onActivity(activity -> {
+                activity.onAnalyzerError("camera failure", null);
+
+                TextView logView = activity.findViewById(R.id.logTextView);
+                assertNotNull(logView);
+                String logText = logView.getText().toString();
+                assertTrue("Expected ERROR prefix in log output", logText.contains("ERROR: Analyzer error: camera failure"));
+            });
+        }
+    }
+
     private Intent createIntent() {
         Context context = androidx.test.core.app.ApplicationProvider.getApplicationContext();
         Intent intent = new Intent(context, MRZScanActivity.class);
