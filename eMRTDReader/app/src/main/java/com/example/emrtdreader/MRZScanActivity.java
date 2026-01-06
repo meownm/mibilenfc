@@ -338,6 +338,11 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     }
 
     @Override
+    public void onFrameProcessed(ScanState state, String message, long timestampMs) {
+        runOnUiThread(() -> appendLogLine(buildHeartbeatLogLine(timestampMs, state, message)));
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         if (overlayAnimator != null) {
@@ -445,6 +450,13 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
                 + " mrzValid=" + mrzValid
                 + " mlLen=" + mlLen
                 + " tessLen=" + tessLen;
+    }
+
+    private String buildHeartbeatLogLine(long timestampMs, ScanState state, String message) {
+        long ts = timestampMs > 0 ? timestampMs : System.currentTimeMillis();
+        String stateLabel = state != null ? state.name() : "UNKNOWN";
+        String msg = message != null ? message : "";
+        return "[heartbeat] ts=" + ts + " state=" + stateLabel + " msg=" + msg;
     }
 
     private String formatMetric(double metric) {

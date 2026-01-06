@@ -15,6 +15,7 @@ import android.widget.TextView;
 
 import androidx.core.content.ContextCompat;
 
+import com.example.emrtdreader.sdk.analysis.ScanState;
 import com.example.emrtdreader.sdk.domain.AccessKey;
 import com.example.emrtdreader.sdk.models.MrzFormat;
 import com.example.emrtdreader.sdk.models.MrzResult;
@@ -284,6 +285,38 @@ public class MRZScanActivityTest {
 
         TextView logTextView = activity.findViewById(R.id.logTextView);
         assertEquals("", logTextView.getText().toString());
+    }
+
+    @Test
+    public void logAppendsHeartbeatWhenFrameSkipped() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        activity.onFrameProcessed(ScanState.WAITING, "Frame skipped: interval", 12345L);
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        String logText = logTextView.getText().toString();
+        assertTrue(logText.contains("[heartbeat]"));
+        assertTrue(logText.contains("ts=12345"));
+        assertTrue(logText.contains("Frame skipped: interval"));
+    }
+
+    @Test
+    public void logAppendsHeartbeatWhenNoRoiFound() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        activity.onFrameProcessed(ScanState.WAITING, "No MRZ ROI detected", 54321L);
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        String logText = logTextView.getText().toString();
+        assertTrue(logText.contains("[heartbeat]"));
+        assertTrue(logText.contains("ts=54321"));
+        assertTrue(logText.contains("No MRZ ROI detected"));
     }
 
     @Test
