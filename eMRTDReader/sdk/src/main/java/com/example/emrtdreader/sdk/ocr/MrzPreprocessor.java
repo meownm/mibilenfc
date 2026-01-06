@@ -8,12 +8,24 @@ import android.graphics.Paint;
 
 /** Lightweight MRZ-oriented preprocessing: grayscale + contrast. */
 public final class MrzPreprocessor {
+    private static final float TESSERACT_SCALE_FACTOR = 2.0f;
+
     private MrzPreprocessor() {}
 
     public static Bitmap preprocess(Bitmap src) {
         if (src == null) return null;
         Bitmap gray = toGrayscale(src);
         return increaseContrast(gray, 1.8f);
+    }
+
+    public static Bitmap preprocessForMl(Bitmap src) {
+        return preprocess(src);
+    }
+
+    public static Bitmap preprocessForTesseract(Bitmap src) {
+        Bitmap pre = preprocess(src);
+        Bitmap scaled = scaleForTesseract(pre);
+        return AdaptiveThreshold.binarize(scaled);
     }
 
     private static Bitmap toGrayscale(Bitmap src) {
@@ -25,6 +37,16 @@ public final class MrzPreprocessor {
         paint.setColorFilter(new ColorMatrixColorFilter(cm));
         canvas.drawBitmap(src, 0, 0, paint);
         return out;
+    }
+
+    private static Bitmap scaleForTesseract(Bitmap src) {
+        if (src == null) return null;
+        int width = Math.max(1, Math.round(src.getWidth() * TESSERACT_SCALE_FACTOR));
+        int height = Math.max(1, Math.round(src.getHeight() * TESSERACT_SCALE_FACTOR));
+        if (width == src.getWidth() && height == src.getHeight()) {
+            return src;
+        }
+        return Bitmap.createScaledBitmap(src, width, height, true);
     }
 
     private static Bitmap increaseContrast(Bitmap src, float factor) {
