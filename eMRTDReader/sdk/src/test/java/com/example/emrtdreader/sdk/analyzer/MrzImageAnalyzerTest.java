@@ -3,6 +3,7 @@ package com.example.emrtdreader.sdk.analyzer;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -10,6 +11,10 @@ import static org.mockito.Mockito.when;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.media.Image;
 
 import androidx.camera.core.ImageInfo;
 import androidx.camera.core.ImageProxy;
@@ -28,7 +33,6 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowLog;
 
-import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -63,7 +67,8 @@ public class MrzImageAnalyzerTest {
                 tess,
                 DualOcrRunner.Mode.AUTO_DUAL,
                 0,
-                listener
+                listener,
+                createTestConverter(createSolidBitmap(8, 8, Color.GRAY))
         );
 
         analyzer.analyze(imageProxy);
@@ -98,7 +103,8 @@ public class MrzImageAnalyzerTest {
                 tess,
                 DualOcrRunner.Mode.MLKIT_ONLY,
                 0,
-                listener
+                listener,
+                createTestConverter(createSolidBitmap(8, 8, Color.GRAY))
         );
 
         ImageProxy imageProxy = createImageProxy(closed, 8, 8);
@@ -114,6 +120,15 @@ public class MrzImageAnalyzerTest {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
         AtomicBoolean recognizeCalled = new AtomicBoolean(false);
+        AtomicBoolean failOnce = new AtomicBoolean(true);
+        Bitmap okFrame = createSolidBitmap(8, 8, Color.GRAY);
+        YuvBitmapConverter flakyConverter = new YuvBitmapConverter((image, bitmap) -> {
+            if (failOnce.getAndSet(false)) {
+                throw new RuntimeException("conversion");
+            }
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawBitmap(okFrame, 0, 0, null);
+        });
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
@@ -121,7 +136,8 @@ public class MrzImageAnalyzerTest {
                 mock(OcrEngine.class),
                 DualOcrRunner.Mode.MLKIT_ONLY,
                 0,
-                listener
+                listener,
+                flakyConverter
         );
 
         AtomicBoolean closed = new AtomicBoolean(false);
@@ -129,7 +145,9 @@ public class MrzImageAnalyzerTest {
         ImageInfo info = mock(ImageInfo.class);
         when(failingProxy.getImageInfo()).thenReturn(info);
         when(info.getRotationDegrees()).thenReturn(0);
-        when(failingProxy.getPlanes()).thenThrow(new RuntimeException("planes"));
+        when(failingProxy.getWidth()).thenReturn(8);
+        when(failingProxy.getHeight()).thenReturn(8);
+        when(failingProxy.getImage()).thenReturn(mock(Image.class));
         doAnswer(invocation -> {
             closed.set(true);
             return null;
@@ -159,7 +177,9 @@ public class MrzImageAnalyzerTest {
         ImageInfo imageInfo = mock(ImageInfo.class);
         when(imageProxy.getImageInfo()).thenReturn(imageInfo);
         when(imageInfo.getRotationDegrees()).thenReturn(0);
-        when(imageProxy.getPlanes()).thenThrow(new RuntimeException("conversion"));
+        when(imageProxy.getWidth()).thenReturn(8);
+        when(imageProxy.getHeight()).thenReturn(8);
+        when(imageProxy.getImage()).thenReturn(mock(Image.class));
 
         AtomicBoolean closed = new AtomicBoolean(false);
         doAnswer(invocation -> {
@@ -173,7 +193,8 @@ public class MrzImageAnalyzerTest {
                 tess,
                 DualOcrRunner.Mode.AUTO_DUAL,
                 0,
-                listener
+                listener,
+                createFailingConverter()
         );
 
         analyzer.analyze(imageProxy);
@@ -194,7 +215,8 @@ public class MrzImageAnalyzerTest {
                 mock(OcrEngine.class),
                 DualOcrRunner.Mode.MLKIT_ONLY,
                 0,
-                listener
+                listener,
+                createTestConverter(createSolidBitmap(8, 8, Color.GRAY))
         );
 
         AtomicBoolean closed = new AtomicBoolean(false);
@@ -224,10 +246,11 @@ public class MrzImageAnalyzerTest {
                 mock(OcrEngine.class),
                 DualOcrRunner.Mode.MLKIT_ONLY,
                 0,
-                listener
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
         );
 
-        ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 8, 8);
+        ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 320, 240);
         analyzer.analyze(imageProxy);
 
         InOrder inOrder = org.mockito.Mockito.inOrder(listener);
@@ -259,10 +282,11 @@ public class MrzImageAnalyzerTest {
                 tess,
                 DualOcrRunner.Mode.AUTO_DUAL,
                 0,
-                listener
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
         );
 
-        ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 8, 8);
+        ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 320, 240);
         analyzer.analyze(imageProxy);
 
         InOrder inOrder = org.mockito.Mockito.inOrder(listener);
@@ -271,41 +295,82 @@ public class MrzImageAnalyzerTest {
         inOrder.verify(listener).onScanState(eq(ScanState.MRZ_FOUND), eq("MRZ detected"));
     }
 
+    @Test
+    public void analyzeDetectsMrzAcrossConvertedFrames() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
+                TD3_MRZ,
+                1,
+                new OcrMetrics(0, 0, 0),
+                OcrResult.Engine.ML_KIT
+        ));
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+
+        verify(listener, atLeastOnce()).onScanState(eq(ScanState.MRZ_FOUND), eq("MRZ detected"));
+        verify(listener).onFinalMrz(any(), any());
+    }
+
     private static ImageProxy createImageProxy(AtomicBoolean closedFlag, int width, int height) {
-        int ySize = width * height;
-        int uvSize = (width * height) / 4;
-        byte[] y = new byte[ySize];
-        byte[] u = new byte[uvSize];
-        byte[] v = new byte[uvSize];
-        for (int i = 0; i < y.length; i++) {
-            y[i] = (byte) 120;
-        }
-        for (int i = 0; i < uvSize; i++) {
-            u[i] = (byte) 128;
-            v[i] = (byte) 128;
-        }
-
-        ImageProxy.PlaneProxy yPlane = mock(ImageProxy.PlaneProxy.class);
-        ImageProxy.PlaneProxy uPlane = mock(ImageProxy.PlaneProxy.class);
-        ImageProxy.PlaneProxy vPlane = mock(ImageProxy.PlaneProxy.class);
-
-        when(yPlane.getBuffer()).thenReturn(ByteBuffer.wrap(y));
-        when(uPlane.getBuffer()).thenReturn(ByteBuffer.wrap(u));
-        when(vPlane.getBuffer()).thenReturn(ByteBuffer.wrap(v));
-
         ImageProxy imageProxy = mock(ImageProxy.class);
         ImageInfo imageInfo = mock(ImageInfo.class);
         when(imageProxy.getImageInfo()).thenReturn(imageInfo);
         when(imageInfo.getRotationDegrees()).thenReturn(0);
         when(imageProxy.getWidth()).thenReturn(width);
         when(imageProxy.getHeight()).thenReturn(height);
-        when(imageProxy.getPlanes()).thenReturn(new ImageProxy.PlaneProxy[]{yPlane, uPlane, vPlane});
+        when(imageProxy.getImage()).thenReturn(mock(Image.class));
         doAnswer(invocation -> {
             closedFlag.set(true);
             return null;
         }).when(imageProxy).close();
 
         return imageProxy;
+    }
+
+    private static YuvBitmapConverter createTestConverter(Bitmap source) {
+        return new YuvBitmapConverter((image, bitmap) -> {
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawBitmap(source, 0, 0, null);
+        });
+    }
+
+    private static YuvBitmapConverter createFailingConverter() {
+        return new YuvBitmapConverter((image, bitmap) -> {
+            throw new RuntimeException("conversion");
+        });
+    }
+
+    private static Bitmap createSolidBitmap(int width, int height, int color) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        bitmap.eraseColor(color);
+        return bitmap;
+    }
+
+    private static Bitmap createMrzSampleBitmap(int width, int height) {
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.drawColor(Color.WHITE);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int bandTop = (int) (height * 0.7f);
+        int bandBottom = (int) (height * 0.9f);
+        for (int x = 0; x < width; x += 6) {
+            paint.setColor((x / 6) % 2 == 0 ? Color.BLACK : Color.DKGRAY);
+            canvas.drawRect(x, bandTop, x + 3, bandBottom, paint);
+        }
+        return bitmap;
     }
 
     private static class FlagOcrEngine implements OcrEngine {
