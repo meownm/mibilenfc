@@ -13,10 +13,10 @@ public final class ThresholdSelector {
         if (gray == null) return binary;
         if (binary == null) return gray;
 
-        float sharpGray = OcrQuality.compute(gray).sharpness;
-        float sharpBin = OcrQuality.compute(binary).sharpness;
+        double sharpGray = OcrQuality.compute(gray).sharpness;
+        double sharpBin = OcrQuality.compute(binary).sharpness;
 
         // If binarized is noticeably worse, keep grayscale.
-        return (sharpBin < sharpGray * 0.9f) ? gray : binary;
+        return (sharpBin < sharpGray * 0.9) ? gray : binary;
     }
 }
