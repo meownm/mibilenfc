@@ -93,7 +93,8 @@ public class MrzImageAnalyzerTest {
         Context context = ApplicationProvider.getApplicationContext();
         AtomicBoolean closed = new AtomicBoolean(false);
         AtomicBoolean recognizeCalled = new AtomicBoolean(false);
-        OcrEngine mlKit = new FlagOcrEngine(closed, recognizeCalled);
+        AtomicBoolean immutableSeen = new AtomicBoolean(false);
+        OcrEngine mlKit = new FlagOcrEngine(closed, recognizeCalled, immutableSeen);
         OcrEngine tess = mock(OcrEngine.class);
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
 
@@ -111,8 +112,33 @@ public class MrzImageAnalyzerTest {
         analyzer.analyze(imageProxy);
 
         assertTrue(recognizeCalled.get());
+        assertTrue(immutableSeen.get());
         verify(listener).onOcr(any(), any(), any());
         assertTrue(closed.get());
+    }
+
+    @Test
+    public void analyzePassesImmutableBitmapToOcr() {
+        Context context = ApplicationProvider.getApplicationContext();
+        AtomicBoolean immutableSeen = new AtomicBoolean(false);
+        OcrEngine mlKit = new ImmutableOcrEngine(immutableSeen);
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 320, 240);
+        analyzer.analyze(imageProxy);
+
+        assertTrue(immutableSeen.get());
+        verify(listener).onOcr(any(), any(), any());
     }
 
     @Test
@@ -376,10 +402,12 @@ public class MrzImageAnalyzerTest {
     private static class FlagOcrEngine implements OcrEngine {
         private final AtomicBoolean closedFlag;
         private final AtomicBoolean called;
+        private final AtomicBoolean immutableSeen;
 
-        private FlagOcrEngine(AtomicBoolean closedFlag, AtomicBoolean called) {
+        private FlagOcrEngine(AtomicBoolean closedFlag, AtomicBoolean called, AtomicBoolean immutableSeen) {
             this.closedFlag = closedFlag;
             this.called = called;
+            this.immutableSeen = immutableSeen;
         }
 
         @Override
@@ -395,8 +423,44 @@ public class MrzImageAnalyzerTest {
         @Override
         public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
             assertTrue(closedFlag.get());
+            assertTrue(!bitmap.isMutable());
+            immutableSeen.set(!bitmap.isMutable());
             called.set(true);
             return new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT);
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static class ImmutableOcrEngine implements OcrEngine {
+        private final AtomicBoolean immutableSeen;
+
+        private ImmutableOcrEngine(AtomicBoolean immutableSeen) {
+            this.immutableSeen = immutableSeen;
+        }
+
+        @Override
+        public String getName() {
+            return "immutable";
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+            assertTrue(!bitmap.isMutable());
+            immutableSeen.set(!bitmap.isMutable());
+            return new OcrResult(
+                    TD3_MRZ,
+                    1,
+                    new OcrMetrics(0, 0, 0),
+                    OcrResult.Engine.ML_KIT
+            );
         }
 
         @Override
