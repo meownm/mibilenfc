@@ -12,3 +12,52 @@ buildscript {
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
+
+tasks.register("verifyGradleDsl") {
+    group = "verification"
+    description = "Verifies Gradle files use Groovy DSL and avoid Kotlin DSL syntax."
+
+    doLast {
+        def kotlinPatterns = [
+            ~/id\(\".*\"\)/,
+            ~/implementation\(\".*\"\)/,
+            ~/testImplementation\(\".*\"\)/,
+            ~/api\(\".*\"\)/,
+            ~/project\(\".*\"\)/,
+            ~/platform\(\".*\"\)/,
+            ~/include\(\".*\"\)/
+        ]
+
+        def requiredPatterns = [
+            [file: "app/build.gradle", pattern: ~/id\s+'com\.android\.application'/],
+            [file: "sdk/build.gradle", pattern: ~/id\s+'com\.android\.library'/],
+            [file: "settings.gradle", pattern: ~/include\s+'(:app|:sdk)'/]
+        ]
+
+        def violations = []
+        fileTree(rootDir) {
+            include "**/*.gradle"
+            exclude "**/build/**"
+        }.each { gradleFile ->
+            def text = gradleFile.getText("UTF-8")
+            kotlinPatterns.each { pattern ->
+                if (text =~ pattern) {
+                    violations << "${gradleFile}: contains Kotlin DSL pattern ${pattern}"
+                }
+            }
+        }
+
+        requiredPatterns.each { requirement ->
+            def targetFile = file(requirement.file)
+            if (!targetFile.exists()) {
+                violations << "${targetFile}: missing file for DSL verification"
+            } else if (!(targetFile.getText("UTF-8") =~ requirement.pattern)) {
+                violations << "${targetFile}: missing expected Groovy DSL pattern ${requirement.pattern}"
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            throw new GradleException("Gradle DSL verification failed:\\n - " + violations.join("\\n - "))
+        }
+    }
+}

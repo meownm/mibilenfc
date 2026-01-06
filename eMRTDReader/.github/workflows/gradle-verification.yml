@@ -1,0 +1,29 @@
+name: Gradle DSL Verification
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Verify Groovy DSL
+        run: ./gradlew verifyGradleDsl
+
+      - name: Run SDK unit/integration tests
+        run: ./gradlew :sdk:testDebugUnitTest

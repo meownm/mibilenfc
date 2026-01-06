@@ -3,6 +3,13 @@
 ## Add dependency
 Use the `sdk` module as an Android library.
 
+Groovy DSL example:
+```groovy
+dependencies {
+    implementation project(':sdk')
+}
+```
+
 ## Permissions
 - Camera: `android.permission.CAMERA`
 - NFC: `android.permission.NFC`
