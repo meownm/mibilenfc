@@ -10,12 +10,14 @@ import com.example.emrtdreader.sdk.utils.MrzNormalizer;
 import com.example.emrtdreader.sdk.utils.MrzRepair;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -25,9 +27,16 @@ public final class DualOcrRunner {
 
     public enum Mode { MLKIT_ONLY, TESS_ONLY, AUTO_DUAL }
 
+    public interface RunCallback {
+        void onSuccess(RunResult result);
+        void onFailure(Throwable error);
+    }
+
     private static final long DEFAULT_DUAL_TIMEOUT_MS = 1200L;
-    private static final ExecutorService MLKIT_EXECUTOR = Executors.newSingleThreadExecutor(new NamedThreadFactory("mrz-mlkit-ocr"));
-    private static final ExecutorService TESS_EXECUTOR = Executors.newSingleThreadExecutor(new NamedThreadFactory("mrz-tess-ocr"));
+    private static final ExecutorService PREPROCESS_EXECUTOR =
+            Executors.newSingleThreadExecutor(new NamedThreadFactory("mrz-preprocess"));
+    private static final ScheduledExecutorService TIMEOUT_EXECUTOR =
+            Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("mrz-ocr-timeout"));
 
     public static final class RunResult {
         public final OcrResult ocr;
@@ -41,54 +50,104 @@ public final class DualOcrRunner {
 
     private DualOcrRunner() {}
 
-    public static RunResult run(Context ctx, Mode mode, OcrEngine mlKit, OcrEngine tess, Bitmap roi, int rotationDeg) {
-        return runWithTimeout(ctx, mode, mlKit, tess, roi, rotationDeg, DEFAULT_DUAL_TIMEOUT_MS);
+    public static void runAsync(Context ctx,
+                                Mode mode,
+                                OcrEngine mlKit,
+                                OcrEngine tess,
+                                Bitmap roi,
+                                int rotationDeg,
+                                RunCallback callback) {
+        runAsyncWithTimeout(ctx, mode, mlKit, tess, roi, rotationDeg, DEFAULT_DUAL_TIMEOUT_MS, callback);
     }
 
-    static RunResult runWithTimeout(Context ctx,
+    static void runAsyncWithTimeout(Context ctx,
                                     Mode mode,
                                     OcrEngine mlKit,
                                     OcrEngine tess,
                                     Bitmap roi,
                                     int rotationDeg,
-                                    long dualTimeoutMs) {
-        if (roi == null) return new RunResult(emptyOcrResult(), null);
+                                    long dualTimeoutMs,
+                                    RunCallback callback) {
+        if (roi == null) {
+            callback.onSuccess(new RunResult(emptyOcrResult(), null));
+            return;
+        }
 
-        Bitmap pre = MrzPreprocessor.preprocess(roi);
-        Bitmap bin = AdaptiveThreshold.binarize(pre);
-        Bitmap input = ThresholdSelector.choose(pre, bin);
+        CompletableFuture
+                .supplyAsync(() -> preprocess(roi), PREPROCESS_EXECUTOR)
+                .thenAccept(input -> runAsyncInternal(ctx, mode, mlKit, tess, input, rotationDeg, dualTimeoutMs, callback))
+                .exceptionally(ex -> {
+                    callback.onFailure(new IllegalStateException("OCR preprocessing failed", ex));
+                    return null;
+                });
+    }
 
+    private static void runAsyncInternal(Context ctx,
+                                         Mode mode,
+                                         OcrEngine mlKit,
+                                         OcrEngine tess,
+                                         Bitmap input,
+                                         int rotationDeg,
+                                         long dualTimeoutMs,
+                                         RunCallback callback) {
         if (mode == Mode.MLKIT_ONLY) {
-            OcrResult o = mlKit.recognize(ctx, input, rotationDeg);
-            MrzResult m = normalizeAndRepair(o.rawText);
-            return new RunResult(o, m);
+            runSingleAsync(ctx, mlKit, input, rotationDeg, callback);
+            return;
         }
         if (mode == Mode.TESS_ONLY) {
-            OcrResult o = tess.recognize(ctx, input, rotationDeg);
-            MrzResult m = normalizeAndRepair(o.rawText);
-            return new RunResult(o, m);
+            runSingleAsync(ctx, tess, input, rotationDeg, callback);
+            return;
         }
 
-        // AUTO: run both and pick best MRZ
-        CompletableFuture<OcrOutcome> mlFuture = CompletableFuture
-                .supplyAsync(() -> runEngine(ctx, mlKit, input, rotationDeg), MLKIT_EXECUTOR)
-                .exceptionally(ex -> new OcrOutcome(null, null, ex));
-        CompletableFuture<OcrOutcome> tessFuture = CompletableFuture
-                .supplyAsync(() -> runEngine(ctx, tess, input, rotationDeg), TESS_EXECUTOR)
-                .exceptionally(ex -> new OcrOutcome(null, null, ex));
-
+        CompletableFuture<OcrOutcome> mlFuture = runEngineAsync(ctx, mlKit, input, rotationDeg);
+        CompletableFuture<OcrOutcome> tessFuture = runEngineAsync(ctx, tess, input, rotationDeg);
         CompletableFuture<Void> all = CompletableFuture.allOf(mlFuture, tessFuture);
-        try {
-            all.get(dualTimeoutMs, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException ignored) {
-            if (!mlFuture.isDone()) mlFuture.cancel(true);
-            if (!tessFuture.isDone()) tessFuture.cancel(true);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } catch (ExecutionException ignored) {
-            // Individual results are handled per-future.
-        }
+        AtomicBoolean completed = new AtomicBoolean(false);
+        ScheduledFuture<?> timeoutFuture = TIMEOUT_EXECUTOR.schedule(() -> {
+            if (completed.compareAndSet(false, true)) {
+                finalizeAutoResult(mlFuture, tessFuture, callback,
+                        new TimeoutException("Dual OCR timed out"));
+            }
+        }, dualTimeoutMs, TimeUnit.MILLISECONDS);
 
+        all.whenComplete((ignored, ex) -> {
+            if (completed.compareAndSet(false, true)) {
+                timeoutFuture.cancel(false);
+                finalizeAutoResult(mlFuture, tessFuture, callback, ex);
+            }
+        });
+    }
+
+    private static void runSingleAsync(Context ctx,
+                                       OcrEngine engine,
+                                       Bitmap input,
+                                       int rotationDeg,
+                                       RunCallback callback) {
+        runEngineAsync(ctx, engine, input, rotationDeg).whenComplete((outcome, ex) -> {
+            if (ex != null) {
+                callback.onFailure(ex);
+                return;
+            }
+            if (outcome == null) {
+                callback.onFailure(new IllegalStateException("OCR failed"));
+                return;
+            }
+            if (outcome.error != null) {
+                callback.onFailure(outcome.error);
+                return;
+            }
+            if (outcome.ocr == null) {
+                callback.onFailure(new IllegalStateException("OCR failed"));
+                return;
+            }
+            callback.onSuccess(new RunResult(outcome.ocr, outcome.mrz));
+        });
+    }
+
+    private static void finalizeAutoResult(CompletableFuture<OcrOutcome> mlFuture,
+                                           CompletableFuture<OcrOutcome> tessFuture,
+                                           RunCallback callback,
+                                           Throwable error) {
         OcrOutcome mlOutcome = mlFuture.isDone() ? mlFuture.getNow(null) : null;
         OcrOutcome tessOutcome = tessFuture.isDone() ? tessFuture.getNow(null) : null;
 
@@ -110,14 +169,56 @@ public final class DualOcrRunner {
             }
         }
 
-        return new RunResult(bestOutcome != null ? bestOutcome.ocr : emptyOcrResult(), bestMrz);
+        if (bestOutcome != null && bestOutcome.ocr != null) {
+            callback.onSuccess(new RunResult(bestOutcome.ocr, bestMrz));
+            return;
+        }
+
+        Throwable failure = error;
+        if (failure == null) {
+            if (mlOutcome != null && mlOutcome.error != null) {
+                failure = mlOutcome.error;
+            } else if (tessOutcome != null && tessOutcome.error != null) {
+                failure = tessOutcome.error;
+            }
+        }
+        if (failure == null) {
+            failure = new IllegalStateException("OCR failed");
+        }
+        callback.onFailure(failure);
     }
 
-    private static OcrOutcome runEngine(Context ctx, OcrEngine engine, Bitmap input, int rotationDeg) {
-        if (engine == null) return new OcrOutcome(emptyOcrResult(), null, null);
-        OcrResult ocr = engine.recognize(ctx, input, rotationDeg);
-        MrzResult mrz = normalizeAndRepair(ocr.rawText);
-        return new OcrOutcome(ocr, mrz, null);
+    private static CompletableFuture<OcrOutcome> runEngineAsync(Context ctx, OcrEngine engine, Bitmap input, int rotationDeg) {
+        CompletableFuture<OcrOutcome> future = new CompletableFuture<>();
+        if (engine == null) {
+            future.complete(new OcrOutcome(emptyOcrResult(), null, null));
+            return future;
+        }
+
+        try {
+            engine.recognizeAsync(ctx, input, rotationDeg, new OcrEngine.Callback() {
+                @Override
+                public void onSuccess(OcrResult result) {
+                    MrzResult mrz = normalizeAndRepair(result != null ? result.rawText : "");
+                    future.complete(new OcrOutcome(result, mrz, null));
+                }
+
+                @Override
+                public void onFailure(Throwable error) {
+                    future.complete(new OcrOutcome(null, null, error));
+                }
+            });
+        } catch (Throwable e) {
+            future.complete(new OcrOutcome(null, null, e));
+        }
+
+        return future;
+    }
+
+    private static Bitmap preprocess(Bitmap roi) {
+        Bitmap pre = MrzPreprocessor.preprocess(roi);
+        Bitmap bin = AdaptiveThreshold.binarize(pre);
+        return ThresholdSelector.choose(pre, bin);
     }
 
     private static MrzResult normalizeAndRepair(String raw) {

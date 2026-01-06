@@ -11,9 +11,15 @@ import com.googlecode.tesseract.android.TessBaseAPI;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class TesseractOcrEngine implements OcrEngine {
     private TessBaseAPI tess;
+    private static final ExecutorService TESS_EXECUTOR =
+            Executors.newSingleThreadExecutor(new NamedThreadFactory("tess-ocr"));
 
     @Override public String getName() { return "Tesseract"; }
 
@@ -60,7 +66,17 @@ public class TesseractOcrEngine implements OcrEngine {
     }
 
     @Override
-    public synchronized OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+    public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
+        TESS_EXECUTOR.execute(() -> {
+            try {
+                callback.onSuccess(recognizeInternal(ctx, bitmap));
+            } catch (Throwable e) {
+                callback.onFailure(e);
+            }
+        });
+    }
+
+    private synchronized OcrResult recognizeInternal(Context ctx, Bitmap bitmap) {
         long t0 = System.currentTimeMillis();
         OcrMetrics metrics = OcrQuality.compute(bitmap);
 
@@ -71,8 +87,7 @@ public class TesseractOcrEngine implements OcrEngine {
             long dt = System.currentTimeMillis() - t0;
             return new OcrResult(txt == null ? "" : txt, dt, metrics, OcrResult.Engine.TESSERACT);
         } catch (Throwable e) {
-            long dt = System.currentTimeMillis() - t0;
-            return new OcrResult("", dt, metrics, OcrResult.Engine.TESSERACT);
+            throw new IllegalStateException("Tesseract OCR failed", e);
         }
     }
 
@@ -81,6 +96,22 @@ public class TesseractOcrEngine implements OcrEngine {
         if (tess != null) {
             tess.end();
             tess = null;
+        }
+    }
+
+    private static final class NamedThreadFactory implements ThreadFactory {
+        private final String baseName;
+        private final AtomicInteger counter = new AtomicInteger(1);
+
+        private NamedThreadFactory(String baseName) {
+            this.baseName = baseName;
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, baseName + "-" + counter.getAndIncrement());
+            t.setDaemon(true);
+            return t;
         }
     }
 }

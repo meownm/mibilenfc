@@ -22,10 +22,10 @@ import androidx.camera.core.ImageProxy;
 import androidx.test.core.app.ApplicationProvider;
 
 import com.example.emrtdreader.sdk.analysis.ScanState;
-import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
-import com.example.emrtdreader.sdk.ocr.OcrEngine;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
+import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
+import com.example.emrtdreader.sdk.ocr.OcrEngine;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -35,7 +35,10 @@ import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowLog;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
@@ -90,7 +93,7 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
-    public void analyzeUsesSafeBitmapAfterClose() {
+    public void analyzeUsesSafeBitmapAfterClose() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         AtomicBoolean closed = new AtomicBoolean(false);
         AtomicBoolean recognizeCalled = new AtomicBoolean(false);
@@ -98,6 +101,11 @@ public class MrzImageAnalyzerTest {
         OcrEngine mlKit = new FlagOcrEngine(closed, recognizeCalled, immutableSeen);
         OcrEngine tess = mock(OcrEngine.class);
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
@@ -112,6 +120,7 @@ public class MrzImageAnalyzerTest {
         ImageProxy imageProxy = createImageProxy(closed, 8, 8);
         analyzer.analyze(imageProxy);
 
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
         assertTrue(recognizeCalled.get());
         assertTrue(immutableSeen.get());
         verify(listener).onOcr(any(), any(), any());
@@ -119,10 +128,15 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
-    public void analyzeLogsFrameOnEveryCallEvenWhenIntervalSkips() {
+    public void analyzeLogsFrameOnEveryCallEvenWhenIntervalSkips() throws InterruptedException {
         ShadowLog.clear();
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
@@ -142,6 +156,7 @@ public class MrzImageAnalyzerTest {
         analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
         analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
 
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
         verify(listener, times(1)).onOcr(any(), any(), any());
 
         List<ShadowLog.LogItem> logs = ShadowLog.getLogsForTag("MRZ");
@@ -157,13 +172,18 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
-    public void analyzeKeepsOcrWorkingAfterCloseWithRotation() {
+    public void analyzeKeepsOcrWorkingAfterCloseWithRotation() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         AtomicBoolean closed = new AtomicBoolean(false);
         AtomicBoolean recognizeCalled = new AtomicBoolean(false);
         AtomicBoolean immutableSeen = new AtomicBoolean(false);
         OcrEngine mlKit = new FlagOcrEngine(closed, recognizeCalled, immutableSeen);
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
@@ -178,6 +198,7 @@ public class MrzImageAnalyzerTest {
         ImageProxy imageProxy = createImageProxy(closed, 8, 8, 90);
         analyzer.analyze(imageProxy);
 
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
         assertTrue(recognizeCalled.get());
         assertTrue(immutableSeen.get());
         verify(listener).onOcr(any(), any(), any());
@@ -185,11 +206,16 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
-    public void analyzePassesImmutableBitmapToOcr() {
+    public void analyzePassesImmutableBitmapToOcr() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         AtomicBoolean immutableSeen = new AtomicBoolean(false);
         OcrEngine mlKit = new ImmutableOcrEngine(immutableSeen);
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
@@ -204,12 +230,13 @@ public class MrzImageAnalyzerTest {
         ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 320, 240);
         analyzer.analyze(imageProxy);
 
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
         assertTrue(immutableSeen.get());
         verify(listener).onOcr(any(), any(), any());
     }
 
     @Test
-    public void analyzeRecoversAfterConversionFailure() {
+    public void analyzeRecoversAfterConversionFailure() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
         AtomicBoolean recognizeCalled = new AtomicBoolean(false);
@@ -222,6 +249,11 @@ public class MrzImageAnalyzerTest {
             Canvas canvas = new Canvas(bitmap);
             canvas.drawBitmap(okFrame, 0, 0, null);
         });
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
@@ -255,6 +287,7 @@ public class MrzImageAnalyzerTest {
         ImageProxy okProxy = createImageProxy(new AtomicBoolean(false), 8, 8);
         analyzer.analyze(okProxy);
 
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
         verify(listener).onOcr(any(), any(), any());
         assertTrue(recognizeCalled.get());
     }
@@ -298,9 +331,14 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
-    public void analyzeReportsErrorWhenOcrFails() {
+    public void analyzeReportsErrorWhenOcrFails() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch errorLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            errorLatch.countDown();
+            return null;
+        }).when(listener).onAnalyzerError(eq("OCR failed: ocr failed"), any(IllegalStateException.class));
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
@@ -317,15 +355,20 @@ public class MrzImageAnalyzerTest {
 
         analyzer.analyze(imageProxy);
 
-        verify(listener).onAnalyzerError(eq("OCR failed: ocr failed"), any(IllegalStateException.class));
+        assertTrue(errorLatch.await(2, TimeUnit.SECONDS));
         verify(listener).onScanState(eq(ScanState.ERROR), eq("OCR failed: ocr failed"));
         assertTrue(closed.get());
     }
 
     @Test
-    public void analyzeEmitsMlTextAndMrzFoundOnSuccess() {
+    public void analyzeEmitsMlTextAndMrzFoundOnSuccess() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
         OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
                 TD3_MRZ,
                 1,
@@ -346,6 +389,8 @@ public class MrzImageAnalyzerTest {
         ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 320, 240);
         analyzer.analyze(imageProxy);
 
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+
         InOrder inOrder = org.mockito.Mockito.inOrder(listener);
         inOrder.verify(listener).onOcr(any(), any(), any());
         inOrder.verify(listener).onScanState(eq(ScanState.ML_TEXT_FOUND), eq("ML Kit OCR text detected"));
@@ -353,9 +398,14 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
-    public void analyzeEmitsTessTextFoundOnFallback() {
+    public void analyzeEmitsTessTextFoundOnFallback() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
         OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
                 "",
                 1,
@@ -382,6 +432,8 @@ public class MrzImageAnalyzerTest {
         ImageProxy imageProxy = createImageProxy(new AtomicBoolean(false), 320, 240);
         analyzer.analyze(imageProxy);
 
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+
         InOrder inOrder = org.mockito.Mockito.inOrder(listener);
         inOrder.verify(listener).onOcr(any(), any(), any());
         inOrder.verify(listener).onScanState(eq(ScanState.TESS_TEXT_FOUND), eq("Tesseract OCR text detected"));
@@ -389,9 +441,14 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
-    public void analyzeDetectsMrzAcrossConvertedFrames() {
+    public void analyzeDetectsMrzAcrossConvertedFrames() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch finalLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            finalLatch.countDown();
+            return null;
+        }).when(listener).onFinalMrz(any(), any());
         OcrEngine mlKit = new FixedOcrEngine(new OcrResult(
                 TD3_MRZ,
                 1,
@@ -413,16 +470,22 @@ public class MrzImageAnalyzerTest {
         analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
         analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
 
+        assertTrue(finalLatch.await(3, TimeUnit.SECONDS));
         verify(listener, atLeastOnce()).onScanState(eq(ScanState.MRZ_FOUND), eq("MRZ detected"));
         verify(listener).onFinalMrz(any(), any());
     }
 
     @Test
-    public void analyzeDetectsMrzAfterBrightnessNormalization() {
+    public void analyzeDetectsMrzAfterBrightnessNormalization() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
         AtomicBoolean ocrCalled = new AtomicBoolean(false);
         OcrEngine mlKit = new ReadableOcrEngine(ocrCalled);
+        CountDownLatch finalLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            finalLatch.countDown();
+            return null;
+        }).when(listener).onFinalMrz(any(), any());
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
@@ -438,9 +501,52 @@ public class MrzImageAnalyzerTest {
         analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
         analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
 
+        assertTrue(finalLatch.await(3, TimeUnit.SECONDS));
         assertTrue(ocrCalled.get());
         verify(listener, atLeastOnce()).onScanState(eq(ScanState.MRZ_FOUND), eq("MRZ detected"));
         verify(listener).onFinalMrz(any(), any());
+    }
+
+    @Test
+    public void analyzeDoesNotBlockWhileOcrRunsAsync() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch releaseLatch = new CountDownLatch(1);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        OcrEngine mlKit = new DelayedOcrEngine(startLatch, releaseLatch);
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mlKit,
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        AtomicBoolean closedFirst = new AtomicBoolean(false);
+        ImageProxy first = createImageProxy(closedFirst, 320, 240);
+
+        Thread analyzeThread = new Thread(() -> analyzer.analyze(first));
+        analyzeThread.start();
+
+        assertTrue(startLatch.await(2, TimeUnit.SECONDS));
+        analyzeThread.join(500);
+        assertTrue(!analyzeThread.isAlive());
+        assertTrue(closedFirst.get());
+
+        AtomicBoolean closedSecond = new AtomicBoolean(false);
+        analyzer.analyze(createImageProxy(closedSecond, 320, 240));
+        assertTrue(closedSecond.get());
+
+        releaseLatch.countDown();
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
     }
 
     private static ImageProxy createImageProxy(AtomicBoolean closedFlag, int width, int height) {
@@ -532,12 +638,12 @@ public class MrzImageAnalyzerTest {
         }
 
         @Override
-        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
             assertTrue(closedFlag.get());
             assertTrue(!bitmap.isMutable());
             immutableSeen.set(!bitmap.isMutable());
             called.set(true);
-            return new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT);
+            callback.onSuccess(new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT));
         }
 
         @Override
@@ -563,15 +669,15 @@ public class MrzImageAnalyzerTest {
         }
 
         @Override
-        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
             assertTrue(!bitmap.isMutable());
             immutableSeen.set(!bitmap.isMutable());
-            return new OcrResult(
+            callback.onSuccess(new OcrResult(
                     TD3_MRZ,
                     1,
                     new OcrMetrics(0, 0, 0),
                     OcrResult.Engine.ML_KIT
-            );
+            ));
         }
 
         @Override
@@ -597,9 +703,9 @@ public class MrzImageAnalyzerTest {
         }
 
         @Override
-        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
             called.set(true);
-            return new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT);
+            callback.onSuccess(new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT));
         }
 
         @Override
@@ -619,8 +725,8 @@ public class MrzImageAnalyzerTest {
         }
 
         @Override
-        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
-            throw new RuntimeException("ocr failed");
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
+            callback.onFailure(new IllegalStateException("ocr failed"));
         }
 
         @Override
@@ -646,8 +752,8 @@ public class MrzImageAnalyzerTest {
         }
 
         @Override
-        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
-            return result;
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
+            callback.onSuccess(result);
         }
 
         @Override
@@ -673,21 +779,22 @@ public class MrzImageAnalyzerTest {
         }
 
         @Override
-        public OcrResult recognize(Context ctx, Bitmap bitmap, int rotationDegrees) {
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
             float avg = averageLuma(bitmap);
             float contrast = contrastBetweenRegions(bitmap);
             called.set(true);
             if (avg >= YuvBitmapConverter.MIN_AVG_LUMA
                     && avg <= YuvBitmapConverter.MAX_AVG_LUMA
                     && contrast >= 60f) {
-                return new OcrResult(
+                callback.onSuccess(new OcrResult(
                         TD3_MRZ,
                         1,
                         new OcrMetrics(0, 0, 0),
                         OcrResult.Engine.ML_KIT
-                );
+                ));
+                return;
             }
-            return new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT);
+            callback.onSuccess(new OcrResult("", 1, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT));
         }
 
         @Override
@@ -735,6 +842,51 @@ public class MrzImageAnalyzerTest {
                 }
             }
             return count == 0L ? 0f : (float) sum / (float) count;
+        }
+    }
+
+    private static class DelayedOcrEngine implements OcrEngine {
+        private final CountDownLatch startLatch;
+        private final CountDownLatch releaseLatch;
+        private final AtomicInteger started = new AtomicInteger(0);
+
+        private DelayedOcrEngine(CountDownLatch startLatch, CountDownLatch releaseLatch) {
+            this.startLatch = startLatch;
+            this.releaseLatch = releaseLatch;
+        }
+
+        @Override
+        public String getName() {
+            return "delayed";
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
+            if (started.getAndIncrement() == 0) {
+                startLatch.countDown();
+            }
+            new Thread(() -> {
+                try {
+                    releaseLatch.await(2, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                callback.onSuccess(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                ));
+            }).start();
+        }
+
+        @Override
+        public void close() {
         }
     }
 }
