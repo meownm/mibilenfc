@@ -10,6 +10,7 @@ Android app that reads eMRTD (ICAO 9303) documents using:
 - JDK 17
 - Android SDK 33 (platforms;android-33, build-tools;33.x)
 - A physical Android device with NFC
+- The root project is **not** an Android project; it only declares Android Gradle Plugin versions.
 - CameraX artifacts:
   - SDK uses only camera-core (and camera-camera2 if needed).
   - App module provides UI/lifecycle dependencies (camera-view, camera-lifecycle) via the CameraX BOM.
@@ -52,8 +53,7 @@ Run the SDK unit test suite (includes MRZ parsing coverage):
 .\gradlew :sdk:testDebugUnitTest
 ```
 
-Validate the Gradle sync configuration and Groovy DSL checks:
+Validate the root-only plugin configuration and run build checks:
 ```powershell
-.\gradlew verifyGradleSyncConfig
-.\gradlew verifyGradleDsl
+.\scripts\tests\gradle_checks.sh
 ```
