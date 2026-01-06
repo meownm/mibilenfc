@@ -15,7 +15,7 @@
 8. MRZ normalization + checksum-guided repair (TD3/TD1)
 9. Burst aggregation -> final MRZ
 
-Listener callbacks from `MrzImageAnalyzer` now include an error signal plus a `ScanState.ERROR` emission so UI layers can surface failures (e.g., MRZ scan activity toast/status updates and log entries) alongside the usual OCR and final MRZ callbacks.
+Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (from `com.example.emrtdreader.sdk.analysis.ScanState`) so UI layers can surface OCR progress, MRZ detection, and failures alongside the usual OCR and final MRZ callbacks.
 
 ## Analyzer lifecycle (CameraX)
 - Each `analyze` call converts the incoming `ImageProxy` to a `Bitmap`, then immediately copies it to an immutable `ARGB_8888` bitmap for safe downstream processing.
@@ -23,11 +23,12 @@ Listener callbacks from `MrzImageAnalyzer` now include an error signal plus a `S
 - Any conversion failure or OCR processing exception triggers the analyzer error callback, emits `ScanState.ERROR`, and still closes the `ImageProxy` if it has not been closed yet.
 
 ## MRZ scan UI feedback
-The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome:
-- Green when an MRZ is detected or finalized.
-- Purple for ML Kit OCR updates.
-- Blue for Tesseract OCR updates.
-- Red when frames stop arriving or the analyzer reports an error.
+The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome. Suggested UI interpretations per `ScanState`:
+- `WAITING`: show a neutral/idle state such as “Waiting for MRZ” (no MRZ detected yet).
+- `ML_TEXT_FOUND`: indicate ML Kit OCR text was detected (e.g., purple highlight or “ML OCR text found”).
+- `TESS_TEXT_FOUND`: indicate Tesseract OCR text was detected (e.g., blue highlight or “Tess OCR text found”).
+- `MRZ_FOUND`: highlight success (e.g., green) when a valid MRZ is detected or finalized.
+- `ERROR`: show error feedback (e.g., red) when the analyzer fails or frames stop arriving.
 
 ## NFC pipeline
 - Access key from MRZ (BAC) + PACE best-effort
