@@ -3,6 +3,7 @@ package com.example.emrtdreader.sdk.ocr;
 import android.content.Context;
 import android.graphics.Bitmap;
 
+import com.example.emrtdreader.sdk.models.MrzFormat;
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrResult;
 

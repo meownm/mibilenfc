@@ -16,6 +16,7 @@
    - If ML Kit returns non-empty text, accept it as the source.
    - If ML Kit returns empty text, run the calibrated Tesseract candidate loop and take the best candidate.
    - If Tesseract yields a valid MRZ (confidence ≥ 3), boost MRZ confidence by one step (capped at 4).
+   - When dual OCR candidates tie on confidence, prefer TD3 (passport) over TD1.
 8. MRZ normalization + checksum-guided repair (TD3/TD1)
 9. Burst aggregation -> final MRZ
 
