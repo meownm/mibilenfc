@@ -15,12 +15,12 @@
 8. MRZ normalization + checksum-guided repair (TD3/TD1)
 9. Burst aggregation -> final MRZ
 
-Listener callbacks from `MrzImageAnalyzer` now include an error signal that surfaces critical analyzer failures to UI layers (e.g., MRZ scan activity toast/status updates) alongside the usual OCR and final MRZ callbacks.
+Listener callbacks from `MrzImageAnalyzer` now include an error signal plus a `ScanState.ERROR` emission so UI layers can surface failures (e.g., MRZ scan activity toast/status updates and log entries) alongside the usual OCR and final MRZ callbacks.
 
 ## Analyzer lifecycle (CameraX)
 - Each `analyze` call converts the incoming `ImageProxy` to a `Bitmap`, then immediately copies it to an immutable `ARGB_8888` bitmap for safe downstream processing.
 - The `ImageProxy` is closed right after the safe bitmap copy completes, before MRZ detection or OCR begins.
-- Any conversion failure or processing exception triggers the analyzer error callback and still closes the `ImageProxy` if it has not been closed yet.
+- Any conversion failure or OCR processing exception triggers the analyzer error callback, emits `ScanState.ERROR`, and still closes the `ImageProxy` if it has not been closed yet.
 
 ## MRZ scan UI feedback
 The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome:

@@ -333,6 +333,9 @@ public class MRZScanActivityTest {
         activity.onAnalyzerError("Frame decode failed", new RuntimeException("boom"));
         ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
 
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        assertTrue(logTextView.getText().toString().contains("Analyzer error: Frame decode failed"));
+
         int actual = getOverlayColor(activity);
         int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
         assertEquals(expected, actual);
