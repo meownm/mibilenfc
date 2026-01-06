@@ -2,6 +2,8 @@ plugins {
     id 'com.android.library'
 }
 
+def bcVersion = "1.77"
+
 android {
     namespace 'com.example.emrtdreader.sdk'
 
@@ -30,6 +32,15 @@ configurations.configureEach {
     exclude group: "org.bouncycastle", module: "bcprov-jdk15on"
     exclude group: "org.bouncycastle", module: "bcpkix-jdk15on"
     exclude group: "org.bouncycastle", module: "bcutil-jdk15on"
+
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == "org.bouncycastle" &&
+            details.requested.name.endsWith("jdk18on")) {
+            def safeModule = details.requested.name.replace("jdk18on", "jdk15to18")
+            details.useTarget("${details.requested.group}:${safeModule}:${bcVersion}")
+            details.because("Replace Java 21 bytecode jdk18on artifacts with Android-safe jdk15to18.")
+        }
+    }
 }
 
 dependencies {
@@ -69,18 +80,18 @@ dependencies {
     /* =========================
        BouncyCastle (ANDROID SAFE)
        ========================= */
-    implementation 'org.bouncycastle:bcprov-jdk15to18:1.77'
-    implementation 'org.bouncycastle:bcutil-jdk15to18:1.77'
-    implementation 'org.bouncycastle:bcpkix-jdk15to18:1.77'
+    implementation "org.bouncycastle:bcprov-jdk15to18:${bcVersion}"
+    implementation "org.bouncycastle:bcutil-jdk15to18:${bcVersion}"
+    implementation "org.bouncycastle:bcpkix-jdk15to18:${bcVersion}"
 
     constraints {
-        implementation('org.bouncycastle:bcprov-jdk15to18:1.77') {
+        implementation("org.bouncycastle:bcprov-jdk15to18:${bcVersion}") {
             because "Pin Android-safe BouncyCastle artifacts to avoid Jetifier/transitive conflicts."
         }
-        implementation('org.bouncycastle:bcutil-jdk15to18:1.77') {
+        implementation("org.bouncycastle:bcutil-jdk15to18:${bcVersion}") {
             because "Pin Android-safe BouncyCastle artifacts to avoid Jetifier/transitive conflicts."
         }
-        implementation('org.bouncycastle:bcpkix-jdk15to18:1.77') {
+        implementation("org.bouncycastle:bcpkix-jdk15to18:${bcVersion}") {
             because "Pin Android-safe BouncyCastle artifacts to avoid Jetifier/transitive conflicts."
         }
     }
@@ -104,9 +115,9 @@ tasks.register("verifySdkDependencies") {
             "org.bouncycastle:bcutil-jdk15on"
         ]
         def pinnedVersions = [
-            "org.bouncycastle:bcprov-jdk15to18": "1.77",
-            "org.bouncycastle:bcpkix-jdk15to18": "1.77",
-            "org.bouncycastle:bcutil-jdk15to18": "1.77"
+            "org.bouncycastle:bcprov-jdk15to18": bcVersion,
+            "org.bouncycastle:bcpkix-jdk15to18": bcVersion,
+            "org.bouncycastle:bcutil-jdk15to18": bcVersion
         ]
 
         def violations = []
@@ -142,6 +153,57 @@ tasks.register("verifySdkDependencies") {
 
         if (!violations.isEmpty()) {
             throw new GradleException("SDK dependency verification failed:\\n - " + violations.join("\\n - "))
+        }
+    }
+}
+
+tasks.register("verifySdkJmrtdResolution") {
+    group = "verification"
+    description = "Verifies JMRTD resolves with Android-safe BouncyCastle artifacts."
+
+    doLast {
+        def requiredModules = [
+            "org.jmrtd:jmrtd",
+            "org.bouncycastle:bcprov-jdk15to18",
+            "org.bouncycastle:bcpkix-jdk15to18",
+            "org.bouncycastle:bcutil-jdk15to18"
+        ]
+        def forbiddenModules = [
+            "org.bouncycastle:bcprov-jdk18on",
+            "org.bouncycastle:bcpkix-jdk18on",
+            "org.bouncycastle:bcutil-jdk18on"
+        ]
+
+        def resolvedModules = [] as Set
+        def violations = []
+
+        configurations.findAll { it.canBeResolved }.each { config ->
+            def result = config.incoming.resolutionResult
+            result.allComponents.each { component ->
+                if (component.id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+                    def module = component.id.group + ":" + component.id.module
+                    if (requiredModules.contains(module)) {
+                        resolvedModules << module
+                        if (module.startsWith("org.bouncycastle:") &&
+                            component.id.version != bcVersion) {
+                            violations << "${config.name}: ${module} resolved to ${component.id.version} (expected ${bcVersion})"
+                        }
+                    }
+                    if (forbiddenModules.contains(module)) {
+                        violations << "${config.name}: resolved forbidden module ${module}:${component.id.version}"
+                    }
+                }
+            }
+        }
+
+        requiredModules.each { module ->
+            if (!resolvedModules.contains(module)) {
+                violations << "No resolved configuration contained required module ${module}"
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            throw new GradleException("JMRTD dependency verification failed:\\n - " + violations.join("\\n - "))
         }
     }
 }

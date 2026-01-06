@@ -10,4 +10,6 @@ fi
 
 ./gradlew :app:assembleDebug
 ./gradlew :sdk:assemble
+./gradlew :sdk:verifySdkDependencies
+./gradlew :sdk:verifySdkJmrtdResolution
 ./gradlew assemble
