@@ -34,6 +34,17 @@ When Auto mode falls back to Tesseract, the SDK runs a fixed candidate set (`Pre
 
 For each candidate, the same ROI frame is preprocessed, Tesseract runs, and the normalized text is scored using the MRZ scoring rules below. The highest score is selected as the final Tesseract result (and is compared against the ML Kit score in Auto mode).
 
+## Preprocess parameter persistence
+To speed up Auto mode, the SDK stores the best-performing `PreprocessParams` per camera and resolution in `SharedPreferences`:
+
+- Preferences file: `mrz_preprocess_params`
+- Key format: `preprocess_params:<cameraId>:<width>x<height>`
+
+Lifecycle:
+- After a successful candidate selection, the best parameter set is persisted for that camera/resolution.
+- On subsequent runs, the stored parameters are tried first alongside the default candidate list.
+- Stored entries are overwritten when a newer candidate wins. Invalid or missing entries are ignored.
+
 ## MRZ scoring rules
 The MRZ scorer parses OCR text into TD3 lines and assigns a normalized score (0..1):
 
