@@ -21,6 +21,10 @@ public final class MrzPreprocessor {
         return preprocess(src);
     }
 
+    public static Bitmap preprocessForMlMinimal(Bitmap src) {
+        return src;
+    }
+
     public static Bitmap preprocessForTesseract(Bitmap src) {
         return preprocessForTesseract(src, PreprocessParamSet.getDefault());
     }
