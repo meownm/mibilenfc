@@ -42,6 +42,7 @@ import com.example.emrtdreader.sdk.analyzer.MrzImageAnalyzer;
 import com.example.emrtdreader.sdk.domain.AccessKey;
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrResult;
+import com.example.emrtdreader.sdk.models.ScanState;
 import com.example.emrtdreader.sdk.ocr.MlKitOcrEngine;
 import com.example.emrtdreader.sdk.ocr.TesseractOcrEngine;
 import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
@@ -318,10 +319,19 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     @Override
     public void onAnalyzerError(String message, Throwable error) {
         runOnUiThread(() -> {
+            Toast.makeText(this, "Analyzer error: " + message, Toast.LENGTH_LONG).show();
+        });
+    }
+
+    @Override
+    public void onScanState(ScanState state, String message) {
+        if (state != ScanState.ERROR) {
+            return;
+        }
+        runOnUiThread(() -> {
             updateOverlayColor(ContextCompat.getColor(this, R.color.overlay_error_red));
             mrzTextView.setText("Analyzer error: " + message);
             appendLogLine("Analyzer error: " + message);
-            Toast.makeText(this, "Analyzer error: " + message, Toast.LENGTH_LONG).show();
         });
     }
 

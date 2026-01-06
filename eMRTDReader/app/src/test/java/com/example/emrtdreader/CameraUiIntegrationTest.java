@@ -7,10 +7,13 @@ import android.Manifest;
 import android.view.View;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.graphics.drawable.GradientDrawable;
 
 import androidx.camera.view.PreviewView;
+import androidx.core.content.ContextCompat;
 
 import com.example.emrtdreader.sdk.analyzer.MrzImageAnalyzer;
+import com.example.emrtdreader.sdk.models.ScanState;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -18,6 +21,7 @@ import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowApplication;
+import org.robolectric.shadows.ShadowLooper;
 
 import java.lang.reflect.Field;
 
@@ -56,5 +60,25 @@ public class CameraUiIntegrationTest {
 
         assertNotNull(scrollView);
         assertNotNull(logTextView);
+    }
+
+    @Test
+    public void mrzScanActivityShowsErrorOverlayAndLogOnScanError() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        activity.onScanState(ScanState.ERROR, "OCR failed");
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        View overlayView = activity.findViewById(R.id.analysisOverlayView);
+
+        assertNotNull(logTextView);
+        assertNotNull(overlayView);
+        assertEquals("Analyzer error: OCR failed", logTextView.getText().toString());
+
+        int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
+        GradientDrawable drawable = (GradientDrawable) overlayView.getBackground();
+        assertEquals(expected, drawable.getColor().getDefaultColor());
     }
 }

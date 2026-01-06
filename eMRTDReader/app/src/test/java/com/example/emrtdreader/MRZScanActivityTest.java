@@ -20,6 +20,7 @@ import com.example.emrtdreader.sdk.models.MrzFormat;
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
+import com.example.emrtdreader.sdk.models.ScanState;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -237,6 +238,7 @@ public class MRZScanActivityTest {
         ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
         MRZScanActivity activity = controller.get();
 
+        activity.onScanState(ScanState.ERROR, "Frame decode failed");
         activity.onAnalyzerError("Frame decode failed", new RuntimeException("boom"));
         ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
 
@@ -330,8 +332,26 @@ public class MRZScanActivityTest {
         ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
         MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
 
+        activity.onScanState(ScanState.ERROR, "Frame decode failed");
         activity.onAnalyzerError("Frame decode failed", new RuntimeException("boom"));
         ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        int actual = getOverlayColor(activity);
+        int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    public void analyzerErrorAppendsLogAndUpdatesOverlay() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        activity.onScanState(ScanState.ERROR, "OCR failed");
+        activity.onAnalyzerError("OCR failed", new RuntimeException("boom"));
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        assertTrue(logTextView.getText().toString().contains("Analyzer error: OCR failed"));
 
         int actual = getOverlayColor(activity);
         int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
