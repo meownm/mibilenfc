@@ -59,6 +59,10 @@ When you implement a synchronous MRZ OCR engine, use `MrzOcrEngine` (`com.exampl
 - Input model: `PreprocessedMrz` (`com.example.emrtdreader.sdk.ocr.PreprocessedMrz`) with a preprocessed `Bitmap` and its `rotationDegrees`.
 - Output model: `OcrOutput` (`com.example.emrtdreader.sdk.models.OcrOutput`) containing raw text and telemetry.
 
+For Tesseract-based MRZ recognition, `TesseractMrzEngine` (`com.example.emrtdreader.sdk.ocr.TesseractMrzEngine`)
+expects already-prepared bitmaps, applies the MRZ whitelist `[A-Z0-9<]`, and disables Tesseract language models
+by turning off DAWG dictionaries.
+
 ## MRZ formats
 The SDK models MRZ formats as TD1, TD2, and TD3. TD2 is treated as a two-line format for access key parsing (document number, date of birth, date of expiry), while normalization and repair currently focus on TD1 and TD3.
 
