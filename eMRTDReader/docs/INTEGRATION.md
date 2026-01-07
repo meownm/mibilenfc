@@ -14,6 +14,14 @@ dependencies {
 - App module: `com.example.emrtdreader`
 - SDK module: `com.example.emrtdreader.sdk`
 
+## MRZ field model
+Use `MrzFields` (`com.example.emrtdreader.sdk.models.MrzFields`) to hold parsed MRZ data in an immutable container:
+
+- `documentNumber`, `birthDateYYMMDD`, `expiryDateYYMMDD`
+- `nationality`, `sex`, `surname`, `givenNames`
+
+`MrzFields#toAccessKey()` returns an `AccessKey.Mrz` populated from the document number, birth date, and expiry date.
+
 ## Permissions
 - Camera: `android.permission.CAMERA`
 - NFC: `android.permission.NFC`
