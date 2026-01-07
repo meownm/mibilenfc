@@ -8,7 +8,7 @@
 1. CameraX frame (ImageAnalysis)
 2. MRZ zone detection (heuristic). If detection fails, fall back to a bottom-of-frame ROI (~35–40% height with small side margins) so OCR can still run.
 3. ROI stabilization (moving average + IoU outlier rejection)
-4. Quality gate (`MrzFrameGate`): evaluates luma-plane brightness/contrast, Laplacian variance blur, and frame-to-frame motion to decide if a frame is usable.
+4. Quality gate (`MrzFrameGate`): evaluates luma-plane brightness/contrast across the full frame, plus Laplacian variance blur and frame-to-frame motion within an ROI (defaults to the lower 40% of the frame when no hint is provided) to decide if a frame is usable.
 5. ML Kit OCR on raw/minimal input (no binarization)
 6. Tesseract preprocessing: calibrate by iterating stored/default preprocessing candidates (scale + adaptive threshold)
 7. OCR routing rules:

@@ -58,7 +58,8 @@ public final class MrzPipelineFacade {
                 frame.yPlane,
                 frame.width,
                 frame.height,
-                frame.previousYPlane
+                frame.previousYPlane,
+                frame.roiHint
         );
         MrzBox localized = localizer.locate(frame);
         TrackResult trackResult = localized != null ? tracker.track(localized) : null;
