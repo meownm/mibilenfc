@@ -4,6 +4,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import android.graphics.Rect;
+
 import com.example.emrtdreader.sdk.models.GateMetrics;
 
 import org.junit.Test;
@@ -26,7 +28,7 @@ public class MrzFrameGateTest {
         );
         MrzFrameGate gate = new MrzFrameGate(thresholds);
 
-        MrzFrameGate.Result result = gate.evaluate(frame, 3, 3, frame);
+        MrzFrameGate.Result result = gate.evaluate(frame, 3, 3, frame, null);
 
         assertTrue(result.pass);
         assertTrue(result.metrics.brightnessMean > 20f);
@@ -45,7 +47,7 @@ public class MrzFrameGateTest {
         );
         MrzFrameGate gate = new MrzFrameGate(thresholds);
 
-        MrzFrameGate.Result result = gate.evaluate(frame, 4, 4, null);
+        MrzFrameGate.Result result = gate.evaluate(frame, 4, 4, null, null);
 
         assertFalse(result.pass);
     }
@@ -62,7 +64,7 @@ public class MrzFrameGateTest {
         );
         MrzFrameGate gate = new MrzFrameGate(thresholds);
 
-        MrzFrameGate.Result result = gate.evaluate(frame, 3, 3, null);
+        MrzFrameGate.Result result = gate.evaluate(frame, 3, 3, null, null);
 
         assertFalse(result.pass);
         assertEquals(0f, result.metrics.blurVarLap, 0.001f);
@@ -81,16 +83,55 @@ public class MrzFrameGateTest {
         );
         MrzFrameGate gate = new MrzFrameGate(thresholds);
 
-        MrzFrameGate.Result result = gate.evaluate(current, 2, 2, previous);
+        MrzFrameGate.Result result = gate.evaluate(current, 2, 2, previous, null);
 
         assertFalse(result.pass);
         assertTrue(result.metrics.motionMad > 10f);
     }
 
+    @Test
+    public void computeMetricsUsesRoiHintForMotion() {
+        byte[] current = new byte[] {
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0
+        };
+        byte[] previous = new byte[] {
+                (byte) 255, (byte) 255, (byte) 255, (byte) 255,
+                (byte) 255, (byte) 255, (byte) 255, (byte) 255,
+                0, 0, 0, 0,
+                0, 0, 0, 0
+        };
+        Rect roiHint = new Rect(0, 2, 4, 4);
+
+        GateMetrics metrics = MrzFrameGate.computeMetrics(current, 4, 4, previous, roiHint);
+
+        assertEquals(0f, metrics.motionMad, 0.001f);
+    }
+
+    @Test
+    public void computeMetricsNormalizesLaplacianVarianceByArea() {
+        byte[] frame = new byte[] {
+                (byte) 197, (byte) 215, 20, (byte) 132,
+                (byte) 248, (byte) 207, (byte) 155, (byte) 244,
+                (byte) 183, (byte) 111, 71, (byte) 144,
+                71, 48, (byte) 128, 75
+        };
+        Rect full = new Rect(0, 0, 4, 4);
+        Rect center = new Rect(1, 1, 3, 3);
+
+        GateMetrics fullMetrics = MrzFrameGate.computeMetrics(frame, 4, 4, null, full);
+        GateMetrics centerMetrics = MrzFrameGate.computeMetrics(frame, 4, 4, null, center);
+
+        assertEquals(1243.5156f, fullMetrics.blurVarLap, 0.01f);
+        assertEquals(4974.0625f, centerMetrics.blurVarLap, 0.01f);
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void computeMetricsRejectsInvalidInput() {
         byte[] frame = new byte[3];
-        GateMetrics metrics = MrzFrameGate.computeMetrics(frame, 2, 2, null);
+        GateMetrics metrics = MrzFrameGate.computeMetrics(frame, 2, 2, null, null);
         assertEquals(0f, metrics.brightnessMean, 0.001f);
     }
 }

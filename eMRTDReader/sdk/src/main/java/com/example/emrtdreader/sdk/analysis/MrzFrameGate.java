@@ -1,5 +1,7 @@
 package com.example.emrtdreader.sdk.analysis;
 
+import android.graphics.Rect;
+
 import com.example.emrtdreader.sdk.models.GateMetrics;
 
 /**
@@ -53,8 +55,12 @@ public final class MrzFrameGate {
         this.thresholds = thresholds;
     }
 
-    public Result evaluate(byte[] yPlane, int width, int height, byte[] previousYPlane) {
-        GateMetrics metrics = computeMetrics(yPlane, width, height, previousYPlane);
+    public Result evaluate(byte[] yPlane,
+                           int width,
+                           int height,
+                           byte[] previousYPlane,
+                           Rect roiHint) {
+        GateMetrics metrics = computeMetrics(yPlane, width, height, previousYPlane, roiHint);
         boolean pass = metrics.brightnessMean >= thresholds.minBrightness
                 && metrics.brightnessMean <= thresholds.maxBrightness
                 && metrics.contrastStd >= thresholds.minContrast
@@ -63,7 +69,11 @@ public final class MrzFrameGate {
         return new Result(pass, metrics);
     }
 
-    public static GateMetrics computeMetrics(byte[] yPlane, int width, int height, byte[] previousYPlane) {
+    public static GateMetrics computeMetrics(byte[] yPlane,
+                                             int width,
+                                             int height,
+                                             byte[] previousYPlane,
+                                             Rect roiHint) {
         if (yPlane == null) {
             throw new IllegalArgumentException("yPlane cannot be null");
         }
@@ -86,40 +96,114 @@ public final class MrzFrameGate {
         double variance = (sum2 / pixelCount) - mean * mean;
         double stddev = Math.sqrt(Math.max(0, variance));
 
+        Rect roi = resolveRoi(width, height, roiHint);
+        double lapVar = computeLaplacianVarianceROI(yPlane, width, height, roi);
+        double motionMad = computeMadROI(yPlane, previousYPlane, width, height, roi);
+
+        return new GateMetrics((float) mean, (float) stddev, (float) lapVar, (float) motionMad);
+    }
+
+    private static Rect resolveRoi(int width, int height, Rect roiHint) {
+        if (roiHint == null) {
+            int top = (int) (height * 0.6f);
+            return new Rect(0, top, width, height);
+        }
+
+        int left = clamp(roiHint.left, 0, width);
+        int top = clamp(roiHint.top, 0, height);
+        int right = clamp(roiHint.right, 0, width);
+        int bottom = clamp(roiHint.bottom, 0, height);
+
+        if (right < left) {
+            right = left;
+        }
+        if (bottom < top) {
+            bottom = top;
+        }
+
+        return new Rect(left, top, right, bottom);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double computeMadROI(byte[] yPlane,
+                                        byte[] previousYPlane,
+                                        int width,
+                                        int height,
+                                        Rect roi) {
+        if (previousYPlane == null || previousYPlane.length < width * height) {
+            return 0;
+        }
+
+        int roiWidth = roi.width();
+        int roiHeight = roi.height();
+        int area = roiWidth * roiHeight;
+        if (area <= 0) {
+            return 0;
+        }
+
+        double motionSum = 0;
+        for (int y = roi.top; y < roi.bottom; y++) {
+            int row = y * width;
+            for (int x = roi.left; x < roi.right; x++) {
+                int idx = row + x;
+                int curr = yPlane[idx] & 0xFF;
+                int prev = previousYPlane[idx] & 0xFF;
+                motionSum += Math.abs(curr - prev);
+            }
+        }
+
+        return motionSum / area;
+    }
+
+    private static double computeLaplacianVarianceROI(byte[] yPlane,
+                                                      int width,
+                                                      int height,
+                                                      Rect roi) {
+        int roiWidth = roi.width();
+        int roiHeight = roi.height();
+        int area = roiWidth * roiHeight;
+        if (area <= 0 || width <= 2 || height <= 2) {
+            return 0;
+        }
+
+        int xStart = Math.max(roi.left, 1);
+        int yStart = Math.max(roi.top, 1);
+        int xEnd = Math.min(roi.right - 1, width - 2);
+        int yEnd = Math.min(roi.bottom - 1, height - 2);
+
+        if (xStart > xEnd || yStart > yEnd) {
+            return 0;
+        }
+
         double lapSum = 0;
         double lapSum2 = 0;
         int lapCount = 0;
-        if (width > 2 && height > 2) {
-            for (int y = 1; y < height - 1; y++) {
-                int row = y * width;
-                for (int x = 1; x < width - 1; x++) {
-                    int idx = row + x;
-                    double c = yPlane[idx] & 0xFF;
-                    double lap = (-4 * c
-                            + (yPlane[idx - 1] & 0xFF)
-                            + (yPlane[idx + 1] & 0xFF)
-                            + (yPlane[idx - width] & 0xFF)
-                            + (yPlane[idx + width] & 0xFF));
-                    lapSum += lap;
-                    lapSum2 += lap * lap;
-                    lapCount++;
-                }
+        for (int y = yStart; y <= yEnd; y++) {
+            int row = y * width;
+            for (int x = xStart; x <= xEnd; x++) {
+                int idx = row + x;
+                double c = yPlane[idx] & 0xFF;
+                double lap = (-4 * c
+                        + (yPlane[idx - 1] & 0xFF)
+                        + (yPlane[idx + 1] & 0xFF)
+                        + (yPlane[idx - width] & 0xFF)
+                        + (yPlane[idx + width] & 0xFF));
+                lapSum += lap;
+                lapSum2 += lap * lap;
+                lapCount++;
             }
         }
-        double lapMean = lapCount > 0 ? lapSum / lapCount : 0;
-        double lapVar = lapCount > 0 ? (lapSum2 / lapCount - lapMean * lapMean) : 0;
 
-        double motionMad = 0;
-        if (previousYPlane != null && previousYPlane.length >= pixelCount) {
-            double motionSum = 0;
-            for (int i = 0; i < pixelCount; i++) {
-                int curr = yPlane[i] & 0xFF;
-                int prev = previousYPlane[i] & 0xFF;
-                motionSum += Math.abs(curr - prev);
-            }
-            motionMad = motionSum / pixelCount;
+        if (lapCount == 0) {
+            return 0;
         }
 
-        return new GateMetrics((float) mean, (float) stddev, (float) Math.max(0, lapVar), (float) motionMad);
+        double lapMean = lapSum / lapCount;
+        double lapVar = (lapSum2 / lapCount) - lapMean * lapMean;
+        double normalized = lapVar / area;
+        return Math.max(0, normalized);
     }
 }
