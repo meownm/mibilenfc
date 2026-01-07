@@ -176,13 +176,23 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
-    public void analyzeEmitsHeartbeatWhenNoRoiDetected() {
+    public void analyzeUsesFallbackRoiWhenNoRoiDetected() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
 
         MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
                 context,
-                mock(OcrEngine.class),
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
                 mock(OcrEngine.class),
                 DualOcrRunner.Mode.MLKIT_ONLY,
                 0,
@@ -192,8 +202,44 @@ public class MrzImageAnalyzerTest {
 
         analyzer.analyze(createImageProxy(new AtomicBoolean(false), 24, 24));
 
-        verify(listener).onFrameProcessed(eq(ScanState.WAITING), eq("No MRZ ROI detected"), anyLong());
-        verify(listener).onScanState(eq(ScanState.WAITING), eq("No MRZ ROI detected"));
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+        verify(listener).onFrameProcessed(eq(ScanState.WAITING), eq("No MRZ ROI detected; using fallback ROI"), anyLong());
+        InOrder inOrder = org.mockito.Mockito.inOrder(listener);
+        inOrder.verify(listener).onOcr(any(), any(), any());
+        inOrder.verify(listener).onScanState(eq(ScanState.ML_TEXT_FOUND), eq("ML Kit OCR text detected"));
+        inOrder.verify(listener).onScanState(eq(ScanState.MRZ_FOUND), eq("MRZ detected"));
+    }
+
+    @Test
+    public void analyzeEmitsWaitingWhenFallbackOcrReturnsEmpty() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        "",
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createSolidBitmap(24, 24, Color.WHITE))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 24, 24));
+
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+        verify(listener).onFrameProcessed(eq(ScanState.WAITING), eq("No MRZ ROI detected; using fallback ROI"), anyLong());
+        verify(listener).onScanState(eq(ScanState.WAITING), eq("Waiting for MRZ"));
     }
 
     @Test
