@@ -1,6 +1,7 @@
 package com.example.emrtdreader.sdk.analyzer;
 
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -431,6 +432,87 @@ public class MrzImageAnalyzerTest {
             }
         }
         assertTrue(foundStats);
+    }
+
+    @Test
+    public void analyzeLogsRoiSizeAndLineHeight() throws InterruptedException {
+        ShadowLog.clear();
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), 320, 240));
+
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+
+        List<ShadowLog.LogItem> logs = ShadowLog.getLogsForTag("MRZ");
+        boolean roiLogged = false;
+        boolean lineLogged = false;
+        for (ShadowLog.LogItem item : logs) {
+            if (item.msg == null) {
+                continue;
+            }
+            if (item.msg.startsWith("MRZ ROI size: w=") && item.msg.contains("h=")) {
+                roiLogged = true;
+            }
+            if (item.msg.startsWith("MRZ line height ~ ")) {
+                lineLogged = true;
+            }
+            if (roiLogged && lineLogged) {
+                break;
+            }
+        }
+        assertTrue(roiLogged);
+        assertTrue(lineLogged);
+    }
+
+    @Test
+    public void analyzeDoesNotLogRoiWhenConversionFails() {
+        ShadowLog.clear();
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mock(OcrEngine.class),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.AUTO_DUAL,
+                0,
+                listener,
+                createFailingConverter()
+        );
+
+        AtomicBoolean closed = new AtomicBoolean(false);
+        ImageProxy imageProxy = createImageProxy(closed, 8, 8);
+
+        analyzer.analyze(imageProxy);
+
+        List<ShadowLog.LogItem> logs = ShadowLog.getLogsForTag("MRZ");
+        for (ShadowLog.LogItem item : logs) {
+            if (item.msg != null && (item.msg.startsWith("MRZ ROI size: w=")
+                    || item.msg.startsWith("MRZ line height ~ "))) {
+                fail("ROI logs should not be emitted when conversion fails.");
+            }
+        }
     }
 
     @Test

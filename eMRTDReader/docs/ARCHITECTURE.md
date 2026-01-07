@@ -47,6 +47,7 @@ For the facade, OCR is gated on a stable tracked ROI (tracker stability), the fr
 - Any conversion failure or OCR processing exception triggers the analyzer error callback, emits `ScanState.ERROR`, and still guarantees the `ImageProxy` is closed to avoid buffer leaks.
 - Frame delivery is logged at the start of each `analyze` call as `FRAME ts=<epoch_ms> w=<width> h=<height>`. Expect ~15–30 fps depending on the configured analyzer interval; continuous log lines indicate steady camera frame delivery, while gaps suggest dropped or stalled frames.
 - After bitmap conversion, `FRAME_STATS` logs capture per-frame metrics computed by `FrameStats` (mean brightness, contrast/stddev, Laplacian variance sharpness, and a local-mean residual noise estimate). These metrics are intended for diagnostics and for tuning thresholds that gate MRZ capture quality.
+- Before OCR, the analyzer logs `MRZ ROI size: w=<width> h=<height>` and `MRZ line height ~ <px>` to confirm the MRZ band size being passed into OCR and the expected per-line height.
 - When MRZ auto-detection fails, the analyzer emits a `WAITING` scan state with a fallback ROI message, updates the ROI stabilizer with the fallback rectangle, and continues OCR. This keeps scan-state transitions (ML/Tesseract text found, MRZ found) flowing even without a detected MRZ band.
 
 ## MRZ scan UI feedback
