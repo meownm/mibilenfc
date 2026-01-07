@@ -49,4 +49,31 @@ public class MrzFrameGateIntegrationTest {
 
         assertEquals(0f, metrics.motionMad, 0.001f);
     }
+
+    @Test
+    public void metricsUseRoiOnlyForBlurAndMotion() {
+        byte[] current = new byte[] {
+                10, 30, 50, 30, 10,
+                20, 60, 90, 60, 20,
+                20, 20, 20, 20, 20,
+                20, 20, 20, 20, 20,
+                20, 20, 20, 20, 20
+        };
+        byte[] previous = new byte[] {
+                10, 30, 50, 30, 10,
+                20, 60, 90, 60, 20,
+                20, 20, 20, 20, 20,
+                (byte) 200, (byte) 200, (byte) 200, (byte) 200, (byte) 200,
+                (byte) 200, (byte) 200, (byte) 200, (byte) 200, (byte) 200
+        };
+        Rect roiHint = new Rect(0, 0, 5, 2);
+
+        GateMetrics roiMetrics = MrzFrameGate.computeMetrics(current, 5, 5, previous, roiHint);
+        GateMetrics defaultMetrics = MrzFrameGate.computeMetrics(current, 5, 5, previous, null);
+
+        assertEquals(0f, roiMetrics.motionMad, 0.001f);
+        assertTrue(roiMetrics.blurVarLap > 0f);
+        assertTrue(defaultMetrics.motionMad > 0f);
+        assertEquals(0f, defaultMetrics.blurVarLap, 0.001f);
+    }
 }
