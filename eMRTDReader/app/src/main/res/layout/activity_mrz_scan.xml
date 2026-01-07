@@ -23,6 +23,12 @@
             android:id="@+id/cameraPreviewView"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+        <com.example.emrtdreader.sdk.ui.MrzDebugOverlayView
+            android:id="@+id/mrzDebugOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clickable="false"
+            android:focusable="false"/>
 
         <View
             android:id="@+id/analysisOverlayView"

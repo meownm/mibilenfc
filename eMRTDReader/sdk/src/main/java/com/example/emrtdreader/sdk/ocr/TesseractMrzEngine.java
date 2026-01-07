@@ -73,8 +73,8 @@ public final class TesseractMrzEngine implements MrzOcrEngine {
     private void ensureInitialized() {
         if (initialized) return;
 
-        // LSTM is mandatory for stable '<' recognition
-        tess.init(dataPath, language, TessBaseAPI.OEM_LSTM_ONLY);
+        // OEM_LSTM_ONLY = 1 (android TessBaseAPI does not expose the constant)
+        tess.init(dataPath, language, 1);
 
         // Strict MRZ character set
         tess.setVariable(TessBaseAPI.VAR_CHAR_WHITELIST, MRZ_WHITELIST);

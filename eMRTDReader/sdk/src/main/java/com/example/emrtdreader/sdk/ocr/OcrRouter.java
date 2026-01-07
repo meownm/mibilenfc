@@ -7,29 +7,47 @@ import android.os.SystemClock;
 import androidx.annotation.NonNull;
 
 import com.example.emrtdreader.sdk.models.MrzResult;
+import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
-import com.example.emrtdreader.sdk.utils.MrzNormalizer;
 
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Routes OCR calls to ML Kit / Tesseract or both.
+ * OCR router:
+ * 1) Try ML Kit (fast). If non-empty -> return it (UI feedback), DO NOT run tesseract.
+ * 2) If ML empty (or ML fails) -> run Tesseract candidate-loop with MRZ-oriented preprocessing.
  *
  * IMPORTANT POLICY:
- * - ML Kit is allowed to provide "text detected" for UI feedback,
- * - but MRZ result must be derived ONLY from Tesseract output.
+ * - MRZ result is derived ONLY from Tesseract output (never from ML Kit).
+ *
+ * This implementation is aligned with:
+ * - OcrEngine (async callback API)
+ * - OcrMetrics / OcrResult models
+ * - PreprocessParamSet candidate loop expectations (tests)
  */
 public final class OcrRouter {
 
     public static final class Result {
         public final String finalText;
+        public final String mlText;
+        public final String tessText;
+
         public final long elapsedMs;
-        public final FrameOcrMetrics metrics;
+        public final OcrMetrics metrics;
         public final OcrResult.Engine engine;
 
-        public Result(String finalText, long elapsedMs, FrameOcrMetrics metrics, OcrResult.Engine engine) {
+        public Result(String finalText,
+                      String mlText,
+                      String tessText,
+                      long elapsedMs,
+                      OcrMetrics metrics,
+                      OcrResult.Engine engine) {
             this.finalText = finalText;
+            this.mlText = mlText;
+            this.tessText = tessText;
             this.elapsedMs = elapsedMs;
             this.metrics = metrics;
             this.engine = engine;
@@ -49,73 +67,197 @@ public final class OcrRouter {
 
     private OcrRouter() {}
 
+    /**
+     * Minimal signature used across SDK tests and simple callers.
+     */
     public static void runAsync(
             @NonNull Context ctx,
             @NonNull OcrEngine mlKitEngine,
             @NonNull OcrEngine tessEngine,
             @NonNull Bitmap roiBitmap,
             int rotationDeg,
-            @NonNull String cameraId,
-            int frameWidth,
-            int frameHeight,
             @NonNull Callback cb
     ) {
-        EXEC.execute(() -> {
-            long t0 = SystemClock.elapsedRealtime();
+        EXEC.execute(() -> runInternal(ctx, mlKitEngine, tessEngine, roiBitmap, rotationDeg, cb));
+    }
 
-            try {
-                // 1) ML Kit pass (fast feedback)
-                OcrOutput ml = null;
-                try {
-                    ml = mlKitEngine.recognize(new PreprocessedMrz(roiBitmap, rotationDeg));
-                } catch (Throwable ignore) {
-                    // ML Kit failures must not kill pipeline
+    // ---------------- internal ----------------
+
+    private static void runInternal(
+            @NonNull Context ctx,
+            @NonNull OcrEngine mlKitEngine,
+            @NonNull OcrEngine tessEngine,
+            @NonNull Bitmap roiBitmap,
+            int rotationDeg,
+            @NonNull Callback cb
+    ) {
+        final long t0 = SystemClock.elapsedRealtime();
+
+        // ML preprocessing must remain "non-binarized" (tests expect this)
+        final Bitmap mlInput = MrzPreprocessor.preprocessForMlMinimal(roiBitmap);
+
+        mlKitEngine.recognizeAsync(ctx, mlInput, rotationDeg, new OcrEngine.Callback() {
+            @Override
+            public void onSuccess(OcrResult mlRes) {
+                final String mlText = safe(mlRes != null ? mlRes.rawText : null);
+
+                // If ML produced any text -> return immediately (NO tesseract call)
+                if (!mlText.isBlank()) {
+                    long elapsed = SystemClock.elapsedRealtime() - t0;
+                    OcrMetrics metrics = (mlRes != null) ? mlRes.metrics : new OcrMetrics(0, 0, 0);
+
+                    cb.onSuccess(
+                            new Result(
+                                    mlText,
+                                    mlText,
+                                    "",
+                                    elapsed,
+                                    metrics,
+                                    OcrResult.Engine.ML_KIT
+                            ),
+                            null
+                    );
+                    return;
                 }
 
-                // 2) Tesseract pass (authoritative for MRZ)
-                OcrOutput tess = tessEngine.recognize(new PreprocessedMrz(roiBitmap, rotationDeg));
+                // ML empty -> fallback to tesseract candidate loop
+                runTesseractCandidateLoop(ctx, tessEngine, roiBitmap, rotationDeg, t0, "", cb);
+            }
 
-                // Choose displayed text (UI): prefer ML Kit if non-empty, else Tesseract
-                String mlText = ml != null ? safe(ml.text) : "";
-                String tessText = tess != null ? safe(tess.text) : "";
+            @Override
+            public void onFailure(Throwable error) {
+                // ML failures must not kill pipeline -> fallback to tesseract loop
+                runTesseractCandidateLoop(ctx, tessEngine, roiBitmap, rotationDeg, t0, "", cb);
+            }
+        });
+    }
 
-                boolean mlHas = !mlText.isBlank();
-                boolean tessHas = !tessText.isBlank();
+    private static void runTesseractCandidateLoop(
+            @NonNull Context ctx,
+            @NonNull OcrEngine tessEngine,
+            @NonNull Bitmap roiBitmap,
+            int rotationDeg,
+            long t0,
+            @NonNull String mlText,
+            @NonNull Callback cb
+    ) {
+        final List<PreprocessParams> candidates = PreprocessParamSet.getCandidates();
 
-                String finalText;
-                OcrResult.Engine finalEngine;
-                if (mlHas) {
-                    finalText = mlText;
-                    finalEngine = OcrResult.Engine.ML_KIT;
-                } else {
-                    finalText = tessText;
-                    finalEngine = OcrResult.Engine.TESSERACT;
-                }
+        final AtomicReference<BestPick> best = new AtomicReference<>(new BestPick());
 
-                long elapsed = SystemClock.elapsedRealtime() - t0;
+        runCandidateAtIndex(
+                ctx,
+                tessEngine,
+                roiBitmap,
+                rotationDeg,
+                candidates,
+                0,
+                best,
+                () -> {
+                    BestPick pick = best.get();
+                    String tessText = safe(pick.bestText);
 
-                FrameOcrMetrics metrics = new FrameOcrMetrics(
-                        cameraId,
-                        frameWidth,
-                        frameHeight,
-                        roiBitmap.getWidth(),
-                        roiBitmap.getHeight(),
-                        mlHas,
-                        tessHas
-                );
+                    if (tessText.isBlank()) {
+                        cb.onFailure(new IllegalStateException("Tesseract produced empty text for all candidates"));
+                        return;
+                    }
 
-                Result result = new Result(finalText, elapsed, metrics, finalEngine);
+                    long elapsed = SystemClock.elapsedRealtime() - t0;
+                    OcrMetrics metrics = pick.bestMetrics != null ? pick.bestMetrics : new OcrMetrics(0, 0, 0);
 
-                // ✅ MRZ ONLY from Tesseract text
+                    cb.onSuccess(
+                            new Result(
+                                    tessText,
+                                    mlText,
+                                    tessText,
+                                    elapsed,
+                                    metrics,
+                                    OcrResult.Engine.TESSERACT
+                            ),
+                            pick.bestMrz
+                    );
+                },
+                cb
+        );
+    }
+
+    private static void runCandidateAtIndex(
+            @NonNull Context ctx,
+            @NonNull OcrEngine tessEngine,
+            @NonNull Bitmap roiBitmap,
+            int rotationDeg,
+            @NonNull List<PreprocessParams> candidates,
+            int index,
+            @NonNull AtomicReference<BestPick> bestRef,
+            @NonNull Runnable onDone,
+            @NonNull Callback cb
+    ) {
+        if (index >= candidates.size()) {
+            onDone.run();
+            return;
+        }
+
+        PreprocessParams params = candidates.get(index);
+
+        // Tesseract preprocessing: grayscale/contrast -> blur -> scale -> binarize
+        Bitmap tessInput = MrzPreprocessor.preprocessForTesseract(roiBitmap, params);
+
+        tessEngine.recognizeAsync(ctx, tessInput, rotationDeg, new OcrEngine.Callback() {
+            @Override
+            public void onSuccess(OcrResult tessRes) {
+                String text = safe(tessRes != null ? tessRes.rawText : null);
+
+                // Evaluate candidate -> prefer MRZ with higher confidence
                 MrzResult mrz = null;
-                if (tessHas) {
-                    mrz = MrzNormalizer.normalizeBest(tessText);
+                int mrzConfidence = 0;
+                if (!text.isBlank()) {
+                    mrz = MrzTextProcessor.normalizeAndRepair(text);
+                    if (mrz != null) {
+                        mrzConfidence = mrz.confidence;
+                    }
                 }
 
-                cb.onSuccess(result, mrz);
+                BestPick cur = bestRef.get();
+                BestPick next = cur.copy();
 
-            } catch (Throwable e) {
-                cb.onFailure(e);
+                // Primary: higher checksum confidence wins (0..4 TD3 / 0..4 TD1)
+                boolean take = false;
+
+                if (mrz != null && cur.bestMrz == null) {
+                    take = true;
+                } else if (mrz != null && cur.bestMrz != null) {
+                    if (mrzConfidence > cur.bestMrz.confidence) {
+                        take = true;
+                    } else if (mrzConfidence == cur.bestMrz.confidence) {
+                        // Tie-break: better MRZ-like score, then longer text
+                        int sNew = MrzCandidateValidator.score(text);
+                        int sOld = MrzCandidateValidator.score(safe(cur.bestText));
+                        if (sNew > sOld) take = true;
+                        else if (sNew == sOld && text.length() > safe(cur.bestText).length()) take = true;
+                    }
+                } else if (mrz == null && cur.bestMrz == null) {
+                    // No MRZ yet: choose the most MRZ-like raw by heuristic score
+                    int sNew = MrzCandidateValidator.score(text);
+                    int sOld = MrzCandidateValidator.score(safe(cur.bestText));
+                    if (sNew > sOld) take = true;
+                    else if (sNew == sOld && text.length() > safe(cur.bestText).length()) take = true;
+                }
+
+                if (take) {
+                    next.bestText = text;
+                    next.bestMrz = mrz; // may be null
+                    next.bestMetrics = (tessRes != null) ? tessRes.metrics : null;
+                }
+
+                bestRef.set(next);
+
+                runCandidateAtIndex(ctx, tessEngine, roiBitmap, rotationDeg, candidates, index + 1, bestRef, onDone, cb);
+            }
+
+            @Override
+            public void onFailure(Throwable error) {
+                // If one candidate fails, continue with next one (don’t kill the loop)
+                runCandidateAtIndex(ctx, tessEngine, roiBitmap, rotationDeg, candidates, index + 1, bestRef, onDone, cb);
             }
         });
     }
@@ -124,35 +266,17 @@ public final class OcrRouter {
         return s == null ? "" : s;
     }
 
-    /**
-     * Minimal metrics container. Keep it aligned with your existing FrameOcrMetrics
-     * (if you already have one, replace this class with your existing implementation).
-     */
-    public static final class FrameOcrMetrics {
-        public final String cameraId;
-        public final int frameWidth;
-        public final int frameHeight;
-        public final int roiWidth;
-        public final int roiHeight;
-        public final boolean mlHasText;
-        public final boolean tessHasText;
+    private static final class BestPick {
+        String bestText = "";
+        MrzResult bestMrz = null;
+        OcrMetrics bestMetrics = null;
 
-        public FrameOcrMetrics(
-                String cameraId,
-                int frameWidth,
-                int frameHeight,
-                int roiWidth,
-                int roiHeight,
-                boolean mlHasText,
-                boolean tessHasText
-        ) {
-            this.cameraId = cameraId;
-            this.frameWidth = frameWidth;
-            this.frameHeight = frameHeight;
-            this.roiWidth = roiWidth;
-            this.roiHeight = roiHeight;
-            this.mlHasText = mlHasText;
-            this.tessHasText = tessHasText;
+        BestPick copy() {
+            BestPick b = new BestPick();
+            b.bestText = this.bestText;
+            b.bestMrz = this.bestMrz;
+            b.bestMetrics = this.bestMetrics;
+            return b;
         }
     }
 }

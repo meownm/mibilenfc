@@ -19,7 +19,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Runs OCR (single or dual) and selects best MRZ by checksum score first, then image quality.
+ * Runs OCR (single or dual).
+ *
+ * IMPORTANT POLICY:
+ * - MRZ must be derived ONLY from Tesseract output.
+ * - ML Kit may be used for UI text feedback but never trusted for MRZ parsing.
+ *
+ * Selection rules:
+ * - Mode.MLKIT_ONLY: returns ML Kit OCR result, mrz=null
+ * - Mode.TESS_ONLY: returns Tesseract OCR result + MRZ (if parsed)
+ * - Mode.AUTO_DUAL:
+ *      - run both engines in parallel
+ *      - choose OCR text: prefer ML Kit if it has non-empty text, else use Tesseract
+ *      - choose MRZ: from Tesseract only
  */
 public final class DualOcrRunner {
 
@@ -31,8 +43,10 @@ public final class DualOcrRunner {
     }
 
     private static final long DEFAULT_DUAL_TIMEOUT_MS = 1200L;
+
     private static final ExecutorService PREPROCESS_EXECUTOR =
             Executors.newSingleThreadExecutor(new NamedThreadFactory("mrz-preprocess"));
+
     private static final ScheduledExecutorService TIMEOUT_EXECUTOR =
             Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("mrz-ocr-timeout"));
 
@@ -66,6 +80,8 @@ public final class DualOcrRunner {
                                     int rotationDeg,
                                     long dualTimeoutMs,
                                     RunCallback callback) {
+        if (callback == null) return;
+
         if (roi == null) {
             callback.onSuccess(new RunResult(emptyOcrResult(), null));
             return;
@@ -88,21 +104,25 @@ public final class DualOcrRunner {
                                          int rotationDeg,
                                          long dualTimeoutMs,
                                          RunCallback callback) {
-        Bitmap mlInput = inputs != null ? inputs.mlInput : null;
-        Bitmap tessInput = inputs != null ? inputs.tessInput : null;
+        Bitmap mlInput = (inputs != null) ? inputs.mlInput : null;
+        Bitmap tessInput = (inputs != null) ? inputs.tessInput : null;
+
         if (mode == Mode.MLKIT_ONLY) {
-            runSingleAsync(ctx, mlKit, mlInput, rotationDeg, callback);
+            runSingleAsync(ctx, mlKit, mlInput, rotationDeg, /*mrzFromTessOnly*/ false, callback);
             return;
         }
         if (mode == Mode.TESS_ONLY) {
-            runSingleAsync(ctx, tess, tessInput, rotationDeg, callback);
+            runSingleAsync(ctx, tess, tessInput, rotationDeg, /*mrzFromTessOnly*/ true, callback);
             return;
         }
 
-        CompletableFuture<OcrOutcome> mlFuture = runEngineAsync(ctx, mlKit, mlInput, rotationDeg);
-        CompletableFuture<OcrOutcome> tessFuture = runEngineAsync(ctx, tess, tessInput, rotationDeg);
+        // AUTO_DUAL
+        CompletableFuture<OcrOutcome> mlFuture = runEngineAsync(ctx, mlKit, mlInput, rotationDeg, /*mrzFromTessOnly*/ false);
+        CompletableFuture<OcrOutcome> tessFuture = runEngineAsync(ctx, tess, tessInput, rotationDeg, /*mrzFromTessOnly*/ true);
+
         CompletableFuture<Void> all = CompletableFuture.allOf(mlFuture, tessFuture);
         AtomicBoolean completed = new AtomicBoolean(false);
+
         ScheduledFuture<?> timeoutFuture = TIMEOUT_EXECUTOR.schedule(() -> {
             if (completed.compareAndSet(false, true)) {
                 finalizeAutoResult(mlFuture, tessFuture, callback,
@@ -122,8 +142,9 @@ public final class DualOcrRunner {
                                        OcrEngine engine,
                                        Bitmap input,
                                        int rotationDeg,
+                                       boolean mrzFromTessOnly,
                                        RunCallback callback) {
-        runEngineAsync(ctx, engine, input, rotationDeg).whenComplete((outcome, ex) -> {
+        runEngineAsync(ctx, engine, input, rotationDeg, mrzFromTessOnly).whenComplete((outcome, ex) -> {
             if (ex != null) {
                 callback.onFailure(ex);
                 return;
@@ -148,29 +169,28 @@ public final class DualOcrRunner {
                                            CompletableFuture<OcrOutcome> tessFuture,
                                            RunCallback callback,
                                            Throwable error) {
+
         OcrOutcome mlOutcome = mlFuture.isDone() ? mlFuture.getNow(null) : null;
         OcrOutcome tessOutcome = tessFuture.isDone() ? tessFuture.getNow(null) : null;
 
-        MrzResult bestMrz = pickBest(mlOutcome != null ? mlOutcome.mrz : null,
-                tessOutcome != null ? tessOutcome.mrz : null);
-        OcrOutcome bestOutcome = null;
-        if (bestMrz != null) {
-            if (mlOutcome != null && bestMrz == mlOutcome.mrz) {
-                bestOutcome = mlOutcome;
-            } else if (tessOutcome != null && bestMrz == tessOutcome.mrz) {
-                bestOutcome = tessOutcome;
-            }
-        }
-        if (bestOutcome == null) {
-            if (mlOutcome != null && mlOutcome.ocr != null) {
-                bestOutcome = mlOutcome;
-            } else if (tessOutcome != null && tessOutcome.ocr != null) {
-                bestOutcome = tessOutcome;
-            }
+        // MRZ ONLY from Tesseract
+        MrzResult mrz = (tessOutcome != null) ? tessOutcome.mrz : null;
+
+        // Choose OCR text for UI: prefer ML Kit if it has any non-empty text, else Tesseract
+        OcrResult chosenOcr = null;
+
+        if (mlOutcome != null && mlOutcome.ocr != null && !isBlank(mlOutcome.ocr.rawText)) {
+            chosenOcr = mlOutcome.ocr;
+        } else if (tessOutcome != null && tessOutcome.ocr != null && !isBlank(tessOutcome.ocr.rawText)) {
+            chosenOcr = tessOutcome.ocr;
+        } else if (mlOutcome != null && mlOutcome.ocr != null) {
+            chosenOcr = mlOutcome.ocr;
+        } else if (tessOutcome != null && tessOutcome.ocr != null) {
+            chosenOcr = tessOutcome.ocr;
         }
 
-        if (bestOutcome != null && bestOutcome.ocr != null) {
-            callback.onSuccess(new RunResult(bestOutcome.ocr, bestMrz));
+        if (chosenOcr != null) {
+            callback.onSuccess(new RunResult(chosenOcr, mrz));
             return;
         }
 
@@ -188,8 +208,13 @@ public final class DualOcrRunner {
         callback.onFailure(failure);
     }
 
-    private static CompletableFuture<OcrOutcome> runEngineAsync(Context ctx, OcrEngine engine, Bitmap input, int rotationDeg) {
+    private static CompletableFuture<OcrOutcome> runEngineAsync(Context ctx,
+                                                                OcrEngine engine,
+                                                                Bitmap input,
+                                                                int rotationDeg,
+                                                                boolean mrzFromTessOnly) {
         CompletableFuture<OcrOutcome> future = new CompletableFuture<>();
+
         if (engine == null) {
             future.complete(new OcrOutcome(emptyOcrResult(), null, null));
             return future;
@@ -199,7 +224,12 @@ public final class DualOcrRunner {
             engine.recognizeAsync(ctx, input, rotationDeg, new OcrEngine.Callback() {
                 @Override
                 public void onSuccess(OcrResult result) {
-                    MrzResult mrz = MrzTextProcessor.normalizeAndRepair(result != null ? result.rawText : "");
+                    // MRZ parse policy: ONLY when caller explicitly wants MRZ (tesseract path)
+                    MrzResult mrz = null;
+                    if (mrzFromTessOnly) {
+                        String raw = (result != null) ? result.rawText : "";
+                        mrz = MrzTextProcessor.normalizeAndRepair(raw);
+                    }
                     future.complete(new OcrOutcome(result, mrz, null));
                 }
 
@@ -216,17 +246,20 @@ public final class DualOcrRunner {
     }
 
     private static PreprocessResult preprocessForEngines(Bitmap roi) {
-        return new PreprocessResult(preprocessForMl(roi), preprocessForTess(roi));
+        // ML Kit: non-binary
+        Bitmap ml = MrzPreprocessor.preprocessForMl(roi);
+
+        // Tesseract: binary + scaled via default candidate
+        Bitmap tess = MrzPreprocessor.preprocessForTesseract(roi);
+
+        return new PreprocessResult(ml, tess);
     }
 
-    private static Bitmap preprocessForMl(Bitmap roi) {
-        return MrzPreprocessor.preprocessForMl(roi);
-    }
-
-    private static Bitmap preprocessForTess(Bitmap roi) {
-        return MrzPreprocessor.preprocessForTesseract(roi);
-    }
-
+    /**
+     * Kept for compatibility with existing tests / reflection usage.
+     * Not used in current AUTO_DUAL policy (since MRZ is tesseract-only).
+     */
+    @SuppressWarnings("unused")
     private static MrzResult pickBest(MrzResult a, MrzResult b) {
         if (a == null) return b;
         if (b == null) return a;
@@ -237,7 +270,16 @@ public final class DualOcrRunner {
     }
 
     private static OcrResult emptyOcrResult() {
-        return new OcrResult("", 0, OcrQuality.compute(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)), OcrResult.Engine.UNKNOWN);
+        return new OcrResult(
+                "",
+                0,
+                OcrQuality.compute(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)),
+                OcrResult.Engine.UNKNOWN
+        );
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
     }
 
     private static final class OcrOutcome {
