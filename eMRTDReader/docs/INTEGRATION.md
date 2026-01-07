@@ -56,6 +56,18 @@ The MRZ scorer parses OCR text into TD3 lines and assigns a normalized score (0.
 
 If strict formatting fails, the score is `0.0`.
 
+## MRZ failure reasons
+When downstream layers need to convey why MRZ parsing or validation failed, use
+`com.example.emrtdreader.sdk.models.MrzFailReason`. The enum values are:
+
+- `UNKNOWN_FORMAT`
+- `BAD_LENGTH`
+- `BAD_CHARSET`
+- `CHECKSUM_FAIL`
+- `LOW_STRUCTURE_SCORE`
+- `LOW_CONFIDENCE`
+- `INCONSISTENT_BETWEEN_FRAMES`
+
 ## OCR threading
 `MrzImageAnalyzer` and the OCR engines use a callback-based contract. OCR results and errors are delivered asynchronously (often on background threads), so UI layers should marshal updates onto the main thread as needed. The analyzer never blocks on OCR completion, allowing continuous frame delivery.
 
