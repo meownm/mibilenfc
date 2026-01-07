@@ -33,6 +33,7 @@ The SDK also defines `MrzPipelineState` (`com.example.emrtdreader.sdk.analysis.M
 The `MrzStateMachine` (`com.example.emrtdreader.sdk.analysis.MrzStateMachine`) keeps track of the pipeline state, OCR timing, and MRZ confirmation streaks. It advances to `CONFIRMED` after two consecutive OCR results yield the same `MrzKey`, and it resets the streak whenever a mismatch or invalid parse arrives.
 
 The SDK also offers a non-Android, single-threaded `MrzPipelineFacade` (`com.example.emrtdreader.sdk.analysis.MrzPipelineFacade`) for integrating MRZ capture in environments that do not depend on Android APIs. It wires together `MrzFrameGate`, a `MrzLocalizer`, a `MrzTracker`, a pipeline OCR engine, a parser, and the `MrzStateMachine`, executing them in a fixed order per `FrameInput` and returning a `MrzPipelineOutput` snapshot.
+For the facade, OCR is gated on a stable tracked ROI (tracker stability), the frame quality gate passing, no OCR already in-flight, and an interval throttle between runs (`OCR_INTERVAL_MS`) to avoid redundant OCR on back-to-back frames.
 
 ## Analyzer lifecycle (CameraX)
 - Each `analyze` call converts the incoming `ImageProxy` to a mutable `ARGB_8888` bitmap through the SDK-owned `YuvBitmapConverter` wrapper, then normalizes brightness into a readable range before copying to an immutable bitmap for safe downstream processing.
