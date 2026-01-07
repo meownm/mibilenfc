@@ -8,15 +8,18 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.ImageFormat;
 import android.media.Image;
 
 import androidx.camera.core.ImageProxy;
+import androidx.test.core.app.ApplicationProvider;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
+import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @RunWith(RobolectricTestRunner.class)
@@ -95,12 +98,82 @@ public class YuvBitmapConverterTest {
         converter.toBitmap(imageProxy);
     }
 
+    @Test
+    public void toBitmapConvertsYuv420888UsingDefaultConverter() {
+        ImageProxy imageProxy = createYuvImageProxy(4, 2, ImageFormat.YUV_420_888);
+        YuvBitmapConverter converter = new YuvBitmapConverter(ApplicationProvider.getApplicationContext());
+
+        Bitmap converted = converter.toBitmap(imageProxy);
+
+        assertTrue(converted.getWidth() == 4);
+        assertTrue(converted.getHeight() == 2);
+        assertTrue(averageLuma(converted) > 0f);
+    }
+
+    @Test
+    public void toBitmapFailsForUnsupportedFormat() {
+        ImageProxy imageProxy = createYuvImageProxy(4, 2, ImageFormat.JPEG);
+        YuvBitmapConverter converter = new YuvBitmapConverter(ApplicationProvider.getApplicationContext());
+
+        try {
+            converter.toBitmap(imageProxy);
+        } catch (IllegalStateException ex) {
+            assertTrue(ex.getCause() instanceof IllegalArgumentException);
+            return;
+        }
+        throw new AssertionError("Expected IllegalStateException");
+    }
+
     private static ImageProxy createImageProxy(int width, int height) {
         ImageProxy imageProxy = mock(ImageProxy.class);
         when(imageProxy.getWidth()).thenReturn(width);
         when(imageProxy.getHeight()).thenReturn(height);
         when(imageProxy.getImage()).thenReturn(mock(Image.class));
         return imageProxy;
+    }
+
+    private static ImageProxy createYuvImageProxy(int width, int height, int format) {
+        ImageProxy imageProxy = mock(ImageProxy.class);
+        when(imageProxy.getWidth()).thenReturn(width);
+        when(imageProxy.getHeight()).thenReturn(height);
+        when(imageProxy.getImage()).thenReturn(createYuvImage(width, height, format));
+        return imageProxy;
+    }
+
+    private static Image createYuvImage(int width, int height, int format) {
+        Image image = mock(Image.class);
+        when(image.getFormat()).thenReturn(format);
+        when(image.getWidth()).thenReturn(width);
+        when(image.getHeight()).thenReturn(height);
+
+        byte[] yPlane = new byte[width * height];
+        for (int i = 0; i < yPlane.length; i++) {
+            yPlane[i] = (byte) 120;
+        }
+        byte[] uPlane = new byte[width];
+        byte[] vPlane = new byte[width];
+        for (int i = 0; i < width; i++) {
+            uPlane[i] = (byte) 128;
+            vPlane[i] = (byte) 128;
+        }
+
+        Image.Plane y = mock(Image.Plane.class);
+        when(y.getBuffer()).thenReturn(ByteBuffer.wrap(yPlane));
+        when(y.getRowStride()).thenReturn(width);
+        when(y.getPixelStride()).thenReturn(1);
+
+        Image.Plane u = mock(Image.Plane.class);
+        when(u.getBuffer()).thenReturn(ByteBuffer.wrap(uPlane));
+        when(u.getRowStride()).thenReturn(width);
+        when(u.getPixelStride()).thenReturn(2);
+
+        Image.Plane v = mock(Image.Plane.class);
+        when(v.getBuffer()).thenReturn(ByteBuffer.wrap(vPlane));
+        when(v.getRowStride()).thenReturn(width);
+        when(v.getPixelStride()).thenReturn(2);
+
+        when(image.getPlanes()).thenReturn(new Image.Plane[]{y, u, v});
+        return image;
     }
 
     private static Bitmap createSampleFrame(int width, int height, int background, int textColor) {
