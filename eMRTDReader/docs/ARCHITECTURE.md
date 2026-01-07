@@ -22,6 +22,14 @@
 
 Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (from `com.example.emrtdreader.sdk.analysis.ScanState`) so UI layers can surface OCR progress, MRZ detection, and failures alongside the usual OCR and final MRZ callbacks.
 
+The SDK also defines `MrzPipelineState` (`com.example.emrtdreader.sdk.analysis.MrzPipelineState`) to describe higher-level MRZ capture phases that can be mirrored by UI or analytics layers:
+- `SEARCHING`: looking for a stable MRZ band or ROI.
+- `TRACKING`: MRZ band detected and being stabilized across frames.
+- `OCR_RUNNING`: OCR work in flight for the current ROI.
+- `OCR_COOLDOWN`: short throttle window after OCR completes before scanning resumes.
+- `CONFIRMED`: MRZ accepted and locked for downstream use.
+- `TIMEOUT`: MRZ capture timed out without confirmation.
+
 ## Analyzer lifecycle (CameraX)
 - Each `analyze` call converts the incoming `ImageProxy` to a mutable `ARGB_8888` bitmap through the SDK-owned `YuvBitmapConverter` wrapper, then normalizes brightness into a readable range before copying to an immutable bitmap for safe downstream processing.
 - `YuvBitmapConverter` defines a small `Converter` interface (`yuvToRgb(Image, Bitmap)`) so the SDK depends only on `android.media.Image`, `android.graphics.Bitmap`, and CameraX `ImageProxy` at its boundary. The default adapter lives in the SDK and can be swapped in tests or by callers without exposing CameraX-internal classes to the rest of the pipeline.
