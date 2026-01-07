@@ -23,7 +23,22 @@ import java.util.Locale;
 public final class MrzScore {
     private static final int TD3_LINE_LENGTH = 44;
 
-    private MrzScore() {}
+    public int checksumScore;
+    public float lengthScore;
+    public float charsetScore;
+    public float structureScore;
+    public float stabilityScore;
+    public float totalScore;
+
+    public MrzScore() {}
+
+    public void recalcTotal() {
+        totalScore = (checksumScore * 10.0f)
+                + (lengthScore * 2.0f)
+                + (charsetScore * 2.0f)
+                + (structureScore * 3.0f)
+                + (stabilityScore * 5.0f);
+    }
 
     public static double score(String text) {
         ParsedMrz parsed = parse(text);
