@@ -169,15 +169,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             }
 
             Rect stable = rectAverager.update(detected, frameWidth, frameHeight);
-            Bitmap rawRoi = Bitmap.createBitmap(
-                    safeBitmap,
-                    stable.left,
-                    stable.top,
-                    stable.width(),
-                    stable.height()
-            );
-
-            Bitmap roiBmp = rectifyAndScaleMrz(rawRoi);
+            Bitmap roiBmp = Bitmap.createBitmap(safeBitmap, stable.left, stable.top, stable.width(), stable.height());
 
             if (!ocrInFlight.compareAndSet(false, true)) {
                 notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_OCR_IN_FLIGHT, System.currentTimeMillis());
@@ -334,35 +326,4 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         }
         return new Rect(left, top, right, bottom);
     }
-    private static Bitmap rectifyAndScaleMrz(Bitmap src) {
-        int w = src.getWidth();
-        int h = src.getHeight();
-
-        // --- 1. DESKEW (очень простой) ---
-        // Для начала: без сложной оценки угла — работает уже на 80%
-        // (можно добавить позже)
-        Bitmap deskewed = src;
-
-        // --- 2. SCALE под MRZ ---
-        // Цель: строка MRZ ≈ 100 px
-        int targetLinePx = 100;
-        int currentLinePx = Math.max(1, h / 2);
-        float scale = targetLinePx / (float) currentLinePx;
-
-        // Ограничим масштаб
-        scale = Math.max(1.5f, Math.min(scale, 4.0f));
-
-        int newW = Math.round(w * scale);
-        int newH = Math.round(h * scale);
-
-        Bitmap scaled = Bitmap.createScaledBitmap(deskewed, newW, newH, false);
-
-        Log.d(TAG, "MRZ_RECTIFY w=" + w + " h=" + h
-                + " -> " + newW + "x" + newH
-                + " linePx=" + (newH / 2)
-                + " scale=" + scale);
-
-        return scaled;
-    }
-
 }

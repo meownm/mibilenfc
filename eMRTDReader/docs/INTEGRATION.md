@@ -73,6 +73,11 @@ When you need to capture ROI tracking state, use these SDK models:
 - `TrackResult` (`com.example.emrtdreader.sdk.models.TrackResult`) stores tracking state (`stable`, `stableCount`, `jitter`) alongside the tracked `MrzBox`.
 - `MrzTracker` (`com.example.emrtdreader.sdk.models.MrzTracker`) tracks successive boxes, applies EMA smoothing (alpha default 0.5), increments stability when IoU ≥ 0.7, and marks results stable after 3 consecutive matches.
 
+## ROI-aware motion/blur metrics
+When providing an ROI hint, the SDK computes motion and blur signals within that ROI. If no ROI hint is available,
+the metrics default to the lower 40% of the frame. Laplacian variance outputs are normalized by the ROI area so
+values remain comparable across different ROI sizes.
+
 ## Tesseract preprocessing candidates
 When Auto mode falls back to Tesseract, the SDK runs a fixed candidate set (`PreprocessParamSet`) and selects the result with the best MRZ validity score. Each candidate defines the adaptive threshold block size, C offset, scale factor, and blur radius:
 
