@@ -35,21 +35,27 @@ public class MrzPipelineFacadeIntegrationTest {
         MrzStateMachine stateMachine = new MrzStateMachine();
         MrzPipelineFacade facade = new MrzPipelineFacade(gate, localizer, tracker, ocrEngine, parser, stateMachine);
 
-        FrameInput frame = new FrameInput(new byte[] {
+        long step = MrzPipelineFacade.OCR_INTERVAL_MS + 1L;
+        FrameInput firstFrame = new FrameInput(new byte[] {
                 30, 60, 90, 120,
                 60, 90, 120, (byte) 180,
                 90, 120, (byte) 180, (byte) 220,
                 120, (byte) 180, (byte) 220, (byte) 240
         }, 4, 4, null, 100L);
+        FrameInput secondFrame = new FrameInput(firstFrame.yPlane, 4, 4, null, 100L + step);
+        FrameInput thirdFrame = new FrameInput(firstFrame.yPlane, 4, 4, null, 100L + step * 2L);
+        FrameInput fourthFrame = new FrameInput(firstFrame.yPlane, 4, 4, null, 100L + step * 3L);
+        FrameInput fifthFrame = new FrameInput(firstFrame.yPlane, 4, 4, null, 100L + step * 4L);
 
-        MrzPipelineOutput first = facade.onFrame(frame);
-        MrzPipelineOutput second = facade.onFrame(frame);
-        MrzPipelineOutput third = facade.onFrame(frame);
-        MrzPipelineOutput fourth = facade.onFrame(frame);
+        MrzPipelineOutput first = facade.onFrame(firstFrame);
+        MrzPipelineOutput second = facade.onFrame(secondFrame);
+        MrzPipelineOutput third = facade.onFrame(thirdFrame);
+        MrzPipelineOutput fourth = facade.onFrame(fourthFrame);
+        MrzPipelineOutput fifth = facade.onFrame(fifthFrame);
 
-        assertNotNull(third.parseResult);
-        assertEquals(MrzPipelineState.OCR_COOLDOWN, third.pipelineState);
         assertNotNull(fourth.parseResult);
-        assertEquals(MrzPipelineState.CONFIRMED, fourth.pipelineState);
+        assertEquals(MrzPipelineState.OCR_COOLDOWN, fourth.pipelineState);
+        assertNotNull(fifth.parseResult);
+        assertEquals(MrzPipelineState.CONFIRMED, fifth.pipelineState);
     }
 }

@@ -7,12 +7,16 @@ import com.example.emrtdreader.sdk.models.OcrOutput;
 import com.example.emrtdreader.sdk.models.TrackResult;
 
 public final class MrzPipelineFacade {
+    static final long OCR_INTERVAL_MS = 250L;
+
     private final MrzFrameGate gate;
     private final MrzLocalizer localizer;
     private final MrzTracker tracker;
     private final MrzPipelineOcrEngine ocrEngine;
     private final MrzPipelineParser parser;
     private final MrzStateMachine stateMachine;
+    private boolean ocrInFlight;
+    private long lastOcrMs;
 
     public MrzPipelineFacade(MrzFrameGate gate,
                              MrzLocalizer localizer,
@@ -58,18 +62,24 @@ public final class MrzPipelineFacade {
         );
         MrzBox localized = localizer.locate(frame);
         TrackResult trackResult = localized != null ? tracker.track(localized) : null;
-        if (trackResult != null && trackResult.stable) {
+        boolean stable = trackResult != null && trackResult.stable;
+        if (stable) {
             stateMachine.onStableBox();
         }
 
         OcrOutput ocrOutput = null;
         MrzParseResult parseResult = null;
-        if (gateResult.pass && trackResult != null && trackResult.stable) {
-            ocrOutput = ocrEngine.recognize(frame, trackResult);
-            parseResult = parser.parse(ocrOutput);
-            if (parseResult != null) {
-                stateMachine.onOcrResult(parseResult, frame.timestampMs);
+        long nowMs = frame.timestampMs;
+        if (gateResult.pass && stable && shouldRunOcr(nowMs)) {
+            ocrInFlight = true;
+            lastOcrMs = nowMs;
+            try {
+                ocrOutput = ocrEngine.recognize(frame, trackResult);
+                parseResult = parser.parse(ocrOutput);
+            } finally {
+                ocrInFlight = false;
             }
+            stateMachine.onOcrResult(parseResult, nowMs);
         }
 
         return new MrzPipelineOutput(
@@ -80,5 +90,15 @@ public final class MrzPipelineFacade {
                 parseResult,
                 stateMachine.state
         );
+    }
+
+    private boolean shouldRunOcr(long nowMs) {
+        if (ocrInFlight) {
+            return false;
+        }
+        if (lastOcrMs == 0L) {
+            return true;
+        }
+        return nowMs - lastOcrMs >= OCR_INTERVAL_MS;
     }
 }
