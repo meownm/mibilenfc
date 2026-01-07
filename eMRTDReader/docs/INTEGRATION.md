@@ -101,6 +101,16 @@ The SDK also exposes a lightweight `MrzScore` data container in `com.example.emr
 
 These callbacks also trigger `onScanState(ScanState.WAITING, message)` so UI overlays can remain in a "waiting" state without relying on OCR results.
 
+## MRZ pipeline state enum
+For higher-level UX or analytics, the SDK exposes `MrzPipelineState` (`com.example.emrtdreader.sdk.analysis.MrzPipelineState`) with these phases:
+
+- `SEARCHING`
+- `TRACKING`
+- `OCR_RUNNING`
+- `OCR_COOLDOWN`
+- `CONFIRMED`
+- `TIMEOUT`
+
 ## MRZ scan log window
 The MRZ scan activity includes a log window intended for troubleshooting and capture review:
 
