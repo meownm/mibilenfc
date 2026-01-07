@@ -127,26 +127,21 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
     @Override
     public void analyze(@NonNull ImageProxy image) {
-        if (finished.get()) {
-            image.close();
-            return;
-        }
-        log("FRAME ts=" + System.currentTimeMillis() + " w=" + image.getWidth() + " h=" + image.getHeight());
-        long now = System.currentTimeMillis();
-        if (now - lastTs < intervalMs) {
-            image.close();
-            notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_INTERVAL, now);
-            return;
-        }
-        lastTs = now;
-
-        boolean closed = false;
         try {
+            if (finished.get()) {
+                return;
+            }
+            log("FRAME ts=" + System.currentTimeMillis() + " w=" + image.getWidth() + " h=" + image.getHeight());
+            long now = System.currentTimeMillis();
+            if (now - lastTs < intervalMs) {
+                notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_INTERVAL, now);
+                return;
+            }
+            lastTs = now;
+
             int rotationDeg = image.getImageInfo().getRotationDegrees();
             Bitmap bitmap = imageProxyToBitmap(image);
             Bitmap safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
-            image.close();
-            closed = true;
             if (safeBitmap == null) {
                 throw new IllegalStateException("Bitmap copy failed");
             }
@@ -183,14 +178,13 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
             runOcrAsync(roiBmp, rotationDeg, stable, frameWidth, frameHeight);
         } catch (Throwable e) {
-            if (!closed) {
-                image.close();
-            }
             String message = (e instanceof IllegalStateException) ? e.getMessage() : "Analyzer error while processing frame";
             if (message == null || message.trim().isEmpty()) {
                 message = "Analyzer error while processing frame";
             }
             notifyError(message, e);
+        } finally {
+            image.close();
         }
     }
 
