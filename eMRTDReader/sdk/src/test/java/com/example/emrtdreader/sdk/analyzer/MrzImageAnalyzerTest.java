@@ -99,6 +99,90 @@ public class MrzImageAnalyzerTest {
     }
 
     @Test
+    public void analyzeClosesImageOnSuccess() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        AtomicBoolean closed = new AtomicBoolean(false);
+        ImageProxy imageProxy = createImageProxy(closed, 320, 240);
+
+        analyzer.analyze(imageProxy);
+
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+        verify(imageProxy, times(1)).close();
+        assertTrue(closed.get());
+    }
+
+    @Test
+    public void analyzeClosesImageWhenConversionThrows() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                mock(OcrEngine.class),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.AUTO_DUAL,
+                0,
+                listener,
+                createFailingConverter()
+        );
+
+        AtomicBoolean closed = new AtomicBoolean(false);
+        ImageProxy imageProxy = createImageProxy(closed, 8, 8);
+
+        analyzer.analyze(imageProxy);
+
+        verify(imageProxy, times(1)).close();
+        assertTrue(closed.get());
+    }
+
+    @Test
+    public void analyzeClosesImageWhenOcrSetupThrows() {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new ThrowingSetupOcrEngine(),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createMrzSampleBitmap(320, 240))
+        );
+
+        AtomicBoolean closed = new AtomicBoolean(false);
+        ImageProxy imageProxy = createImageProxy(closed, 320, 240);
+
+        analyzer.analyze(imageProxy);
+
+        verify(listener).onAnalyzerError(eq("Analyzer error while processing frame"), any(RuntimeException.class));
+        verify(imageProxy, times(1)).close();
+        assertTrue(closed.get());
+    }
+
+    @Test
     public void analyzeUsesSafeBitmapAfterClose() throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
         AtomicBoolean closed = new AtomicBoolean(false);
@@ -1212,6 +1296,27 @@ public class MrzImageAnalyzerTest {
         @Override
         public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
             callback.onFailure(new IllegalStateException("ocr failed"));
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static class ThrowingSetupOcrEngine implements OcrEngine {
+        @Override
+        public String getName() {
+            return "throwing-setup";
+        }
+
+        @Override
+        public boolean isAvailable(Context ctx) {
+            return true;
+        }
+
+        @Override
+        public void recognizeAsync(Context ctx, Bitmap bitmap, int rotationDegrees, Callback callback) {
+            throw new RuntimeException("setup failed");
         }
 
         @Override
