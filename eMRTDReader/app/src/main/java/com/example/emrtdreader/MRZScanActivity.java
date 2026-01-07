@@ -336,10 +336,7 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     public void onScanState(ScanState state, String message) {
         runOnUiThread(() -> {
             updateOverlayColor(resolveOverlayColor(state));
-            String logLine = buildScanStateLogLine(state, message);
-            if (logLine != null) {
-                appendLogLine(logLine);
-            }
+            appendScanStateLogLine(state, message);
         });
     }
 
@@ -481,6 +478,13 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
                 return buildTimestampedLogLine("Error: " + detail);
             default:
                 return null;
+        }
+    }
+
+    private void appendScanStateLogLine(ScanState state, String message) {
+        String logLine = buildScanStateLogLine(state, message);
+        if (logLine != null) {
+            appendLogLine(logLine);
         }
     }
 

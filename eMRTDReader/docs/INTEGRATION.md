@@ -73,7 +73,7 @@ The MRZ scan activity includes a log window intended for troubleshooting and cap
 
 - The log is append-only; new entries are added at the bottom and existing lines are never overwritten.
 - Log updates are marshaled onto the main thread to keep UI updates safe.
-- Scan-state transitions append timestamped entries, including:
+- Scan-state transitions append timestamped entries (format: `[state] ts=<epoch_ms> <message>`), including:
   - `ML text detected`
   - `Tess text detected`
   - `Waiting for MRZ`
