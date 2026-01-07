@@ -16,6 +16,7 @@ import com.example.emrtdreader.sdk.models.MrzFormat;
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
+import com.example.emrtdreader.sdk.analysis.ScanState;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -98,6 +99,46 @@ public class MRZScanActivityLogTest {
                 assertNotNull(logView);
                 String logText = logView.getText().toString();
                 assertTrue("Expected ERROR prefix in log output", logText.contains("ERROR: Analyzer error: camera failure"));
+            });
+        }
+    }
+
+    @Test
+    public void scanStateLogLinesAppendWithTimestamps() {
+        try (ActivityScenario<MRZScanActivity> scenario = ActivityScenario.launch(createIntent())) {
+            scenario.onActivity(activity -> {
+                activity.onScanState(ScanState.ML_TEXT_FOUND, null);
+                activity.onScanState(ScanState.TESS_TEXT_FOUND, null);
+                activity.onScanState(ScanState.WAITING, null);
+                activity.onScanState(ScanState.ERROR, "Lens blocked");
+
+                TextView logView = activity.findViewById(R.id.logTextView);
+                assertNotNull(logView);
+                String logText = logView.getText().toString();
+                assertTrue("Expected timestamped scan state entry", logText.contains("[state] ts="));
+                assertTrue("Missing ML scan state entry", logText.contains("ML text detected"));
+                assertTrue("Missing TESS scan state entry", logText.contains("Tess text detected"));
+                assertTrue("Missing WAITING scan state entry", logText.contains("Waiting for MRZ"));
+                assertTrue("Missing ERROR scan state entry", logText.contains("Error: Lens blocked"));
+                assertTrue(logText.indexOf("ML text detected") < logText.indexOf("Tess text detected"));
+                assertTrue(logText.indexOf("Tess text detected") < logText.indexOf("Waiting for MRZ"));
+                assertTrue(logText.indexOf("Waiting for MRZ") < logText.indexOf("Error: Lens blocked"));
+            });
+        }
+    }
+
+    @Test
+    public void scanStateLogSkipsMrzFoundAndFallsBackToUnknownError() {
+        try (ActivityScenario<MRZScanActivity> scenario = ActivityScenario.launch(createIntent())) {
+            scenario.onActivity(activity -> {
+                activity.onScanState(ScanState.MRZ_FOUND, null);
+                activity.onScanState(ScanState.ERROR, " ");
+
+                TextView logView = activity.findViewById(R.id.logTextView);
+                assertNotNull(logView);
+                String logText = logView.getText().toString();
+                assertEquals("Expected only one scan-state entry", 1, countOccurrences(logText, "[state]"));
+                assertTrue("Expected unknown error fallback", logText.contains("Error: Unknown error"));
             });
         }
     }
