@@ -34,9 +34,11 @@ The `MrzStateMachine` (`com.example.emrtdreader.sdk.analysis.MrzStateMachine`) k
 
 The SDK also offers a non-Android, single-threaded `MrzPipelineFacade` (`com.example.emrtdreader.sdk.analysis.MrzPipelineFacade`) for integrating MRZ capture in environments that do not depend on Android APIs. It wires together `MrzFrameGate`, a `MrzLocalizer`, a `MrzTracker`, a pipeline OCR engine, a parser, and the `MrzStateMachine`, executing them in a fixed order per `FrameInput` and returning a `MrzPipelineOutput` snapshot.
 For the facade, OCR is gated on a stable tracked ROI (tracker stability), the frame quality gate passing, no OCR already in-flight, and an interval throttle between runs (`OCR_INTERVAL_MS`) to avoid redundant OCR on back-to-back frames.
+`MrzPipelineExecutor` (`com.example.emrtdreader.sdk.analysis.MrzPipelineExecutor`) provides a single-threaded scheduler for running pipeline tasks while keeping only the latest queued work, dropping older queued tasks when the worker is busy to prevent backlog.
 
 ## Analyzer lifecycle (CameraX)
 - Each `analyze` call converts the incoming `ImageProxy` to a mutable `ARGB_8888` bitmap through the SDK-owned `YuvBitmapConverter` wrapper, then normalizes brightness into a readable range before copying to an immutable bitmap for safe downstream processing.
+- Lightweight CameraX metadata can be wrapped in `FrameEnvelope` (`com.example.emrtdreader.sdk.analyzer.FrameEnvelope`) to carry the `ImageProxy`, timestamp, rotation, and frame dimensions without triggering bitmap conversion or heavy processing.
 - `YuvBitmapConverter` defines a small `Converter` interface (`yuvToRgb(Image, Bitmap)`) so the SDK depends only on `android.media.Image`, `android.graphics.Bitmap`, and CameraX `ImageProxy` at its boundary. The default adapter lives in the SDK and can be swapped in tests or by callers without exposing CameraX-internal classes to the rest of the pipeline.
 - The analyzer always works on an immutable copy (`safeBitmap`) so rotation, MRZ detection, ROI cropping, and OCR remain safe even after the `ImageProxy` is closed asynchronously.
 - The conversion path uses an NV21 + JPEG round-trip (`YuvImage.compressToJpeg`) after manually packing `YUV_420_888` planes, trading some CPU time and potential JPEG chroma artifacts for a simple, public-API-only conversion that remains reliable across devices.
