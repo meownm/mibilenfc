@@ -66,6 +66,17 @@ If strict formatting fails, the score is `0.0`.
 
 These callbacks also trigger `onScanState(ScanState.WAITING, message)` so UI overlays can remain in a "waiting" state without relying on OCR results.
 
+## MRZ scan log window
+The MRZ scan activity includes a log window intended for troubleshooting and capture review:
+
+- The log is append-only; new entries are added at the bottom and existing lines are never overwritten.
+- Log updates are marshaled onto the main thread to keep UI updates safe.
+- Scan-state transitions append timestamped entries, including:
+  - `ML text detected`
+  - `Tess text detected`
+  - `Waiting for MRZ`
+  - `Error: <details>`
+
 ## Passive authentication
 The SDK verifies SOD signatures and data group hashes using Bouncy Castle. Ensure the
 `sdk` module keeps the Bouncy Castle provider and certificate converter classes on the

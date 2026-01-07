@@ -320,6 +320,43 @@ public class MRZScanActivityTest {
     }
 
     @Test
+    public void logAppendsScanStateTransitions() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        activity.onScanState(ScanState.ML_TEXT_FOUND, null);
+        activity.onScanState(ScanState.TESS_TEXT_FOUND, null);
+        activity.onScanState(ScanState.WAITING, null);
+        activity.onScanState(ScanState.ERROR, "Lens blocked");
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        String logText = logTextView.getText().toString();
+        assertTrue(logText.contains("ts="));
+        assertTrue(logText.contains("ML text detected"));
+        assertTrue(logText.contains("Tess text detected"));
+        assertTrue(logText.contains("Waiting for MRZ"));
+        assertTrue(logText.contains("Error: Lens blocked"));
+        assertTrue(logText.indexOf("ML text detected") < logText.indexOf("Tess text detected"));
+        assertTrue(logText.indexOf("Tess text detected") < logText.indexOf("Waiting for MRZ"));
+        assertTrue(logText.indexOf("Waiting for MRZ") < logText.indexOf("Error: Lens blocked"));
+    }
+
+    @Test
+    public void logDoesNotAppendOnMrzFoundScanState() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
+        MRZScanActivity activity = controller.get();
+
+        activity.onScanState(ScanState.MRZ_FOUND, null);
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
+        TextView logTextView = activity.findViewById(R.id.logTextView);
+        assertEquals("", logTextView.getText().toString());
+    }
+
+    @Test
     public void onAnalyzerErrorShowsToastAndStatus() {
         ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
         ActivityController<MRZScanActivity> controller = Robolectric.buildActivity(MRZScanActivity.class).setup();
