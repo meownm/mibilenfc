@@ -56,6 +56,15 @@ The MRZ scorer parses OCR text into TD3 lines and assigns a normalized score (0.
 
 If strict formatting fails, the score is `0.0`.
 
+### Checksum breakdown
+For callers that need per-field validation, `MrzValidation` can expose the TD1/TD3 checksum breakdown:
+
+- TD3: `MrzValidation.checksumsTd3(line2)`
+- TD1: `MrzValidation.checksumsTd1(line1, line2, line3)`
+
+Each method returns an `MrzChecksums` object with booleans for the document number, birth date,
+expiry date, and composite (final) checksum, plus `passedCount` and `totalCount`.
+
 ## OCR threading
 `MrzImageAnalyzer` and the OCR engines use a callback-based contract. OCR results and errors are delivered asynchronously (often on background threads), so UI layers should marshal updates onto the main thread as needed. The analyzer never blocks on OCR completion, allowing continuous frame delivery.
 
