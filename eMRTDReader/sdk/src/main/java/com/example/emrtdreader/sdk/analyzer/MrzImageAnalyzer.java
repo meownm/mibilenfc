@@ -281,7 +281,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     }
 
     private Bitmap imageProxyToBitmap(ImageProxy image) {
-        // Uses CameraX's YuvToRgbConverter via YuvBitmapConverter; no NV21/JPEG round-trip.
+        // Converts via YuvBitmapConverter using NV21 + JPEG round-trip for YUV_420_888 frames.
         return yuvBitmapConverter.toBitmap(image);
     }
 
