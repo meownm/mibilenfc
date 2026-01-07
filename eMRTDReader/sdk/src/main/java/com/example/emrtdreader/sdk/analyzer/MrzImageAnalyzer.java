@@ -170,6 +170,8 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
             Rect stable = rectAverager.update(detected, frameWidth, frameHeight);
             Bitmap roiBmp = Bitmap.createBitmap(safeBitmap, stable.left, stable.top, stable.width(), stable.height());
+            log("MRZ ROI size: w=%d h=%d", stable.width(), stable.height());
+            log("MRZ line height ~ %d px", stable.height() / 2);
 
             if (!ocrInFlight.compareAndSet(false, true)) {
                 notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_OCR_IN_FLIGHT, System.currentTimeMillis());
@@ -296,6 +298,10 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
     private void log(String message) {
         Log.d(TAG, message);
+    }
+
+    private void log(String format, Object... args) {
+        Log.d(TAG, String.format(Locale.US, format, args));
     }
 
     private void notifyOcrState(OcrResult ocr) {
