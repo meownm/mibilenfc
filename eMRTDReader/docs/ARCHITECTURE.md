@@ -30,6 +30,8 @@ The SDK also defines `MrzPipelineState` (`com.example.emrtdreader.sdk.analysis.M
 - `CONFIRMED`: MRZ accepted and locked for downstream use.
 - `TIMEOUT`: MRZ capture timed out without confirmation.
 
+The `MrzStateMachine` (`com.example.emrtdreader.sdk.analysis.MrzStateMachine`) keeps track of the pipeline state, OCR timing, and MRZ confirmation streaks. It advances to `CONFIRMED` after two consecutive OCR results yield the same `MrzKey`, and it resets the streak whenever a mismatch or invalid parse arrives.
+
 ## Analyzer lifecycle (CameraX)
 - Each `analyze` call converts the incoming `ImageProxy` to a mutable `ARGB_8888` bitmap through the SDK-owned `YuvBitmapConverter` wrapper, then normalizes brightness into a readable range before copying to an immutable bitmap for safe downstream processing.
 - `YuvBitmapConverter` defines a small `Converter` interface (`yuvToRgb(Image, Bitmap)`) so the SDK depends only on `android.media.Image`, `android.graphics.Bitmap`, and CameraX `ImageProxy` at its boundary. The default adapter lives in the SDK and can be swapped in tests or by callers without exposing CameraX-internal classes to the rest of the pipeline.
