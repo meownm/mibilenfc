@@ -80,6 +80,49 @@ public class DualOcrRunnerIntegrationTest {
         assertEquals(TD3_LINE1, result.mrz.line1);
     }
 
+    @Test
+    public void mlKitOnlyPipelineReturnsTd1MrzFormat() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
+
+        OcrEngine td1Engine = new FixedOcrEngine(
+                new OcrResult(TD1_RAW, 8, new OcrMetrics(0, 0, 0), OcrResult.Engine.ML_KIT));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<DualOcrRunner.RunResult> resultRef = new AtomicReference<>();
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+
+        DualOcrRunner.runAsyncWithTimeout(
+                context,
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                td1Engine,
+                null,
+                bitmap,
+                0,
+                500,
+                new DualOcrRunner.RunCallback() {
+                    @Override
+                    public void onSuccess(DualOcrRunner.RunResult result) {
+                        resultRef.set(result);
+                        latch.countDown();
+                    }
+
+                    @Override
+                    public void onFailure(Throwable error) {
+                        errorRef.set(error);
+                        latch.countDown();
+                    }
+                });
+
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        assertNull(errorRef.get());
+        DualOcrRunner.RunResult result = resultRef.get();
+        assertNotNull(result);
+        assertNotNull(result.mrz);
+        assertEquals(MrzFormat.TD1, result.mrz.format);
+        assertEquals(TD1_LINE1, result.mrz.line1);
+    }
+
     private static final class FixedOcrEngine implements OcrEngine {
         private final OcrResult result;
 
