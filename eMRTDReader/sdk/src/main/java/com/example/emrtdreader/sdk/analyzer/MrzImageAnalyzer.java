@@ -34,9 +34,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     private static final String TAG = "MRZ";
-    private static final String MSG_NO_ROI = "No MRZ ROI detected";
+    private static final String MSG_NO_ROI = "No MRZ ROI detected; using fallback ROI";
     private static final String MSG_SKIP_INTERVAL = "Frame skipped: interval";
     private static final String MSG_SKIP_OCR_IN_FLIGHT = "Frame skipped: OCR in flight";
+    private static final float FALLBACK_ROI_HEIGHT_RATIO = 0.38f;
+    private static final float FALLBACK_ROI_SIDE_MARGIN_RATIO = 0.05f;
 
     public interface Listener {
         void onOcr(OcrResult ocr, MrzResult bestSingle, Rect roi);
@@ -167,8 +169,8 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
             Rect detected = MrzAutoDetector.detect(safeBitmap);
             if (detected == null) {
+                detected = buildFallbackRoi(frameWidth, frameHeight);
                 notifyFrameProcessed(ScanState.WAITING, MSG_NO_ROI, System.currentTimeMillis());
-                return;
             }
 
             Rect stable = rectAverager.update(detected, safeBitmap.getWidth(), safeBitmap.getHeight());
@@ -311,5 +313,23 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         } else if (ocr.engine == OcrResult.Engine.TESSERACT) {
             listener.onScanState(ScanState.TESS_TEXT_FOUND, "Tesseract OCR text detected");
         }
+    }
+
+    private static Rect buildFallbackRoi(int frameWidth, int frameHeight) {
+        int marginX = Math.round(frameWidth * FALLBACK_ROI_SIDE_MARGIN_RATIO);
+        int roiHeight = Math.round(frameHeight * FALLBACK_ROI_HEIGHT_RATIO);
+        int left = Math.max(0, marginX);
+        int right = Math.min(frameWidth, frameWidth - marginX);
+        int bottom = frameHeight;
+        int top = Math.max(0, bottom - roiHeight);
+        if (right <= left) {
+            left = 0;
+            right = frameWidth;
+        }
+        if (bottom <= top) {
+            top = 0;
+            bottom = frameHeight;
+        }
+        return new Rect(left, top, right, bottom);
     }
 }

@@ -6,7 +6,7 @@
 
 ## MRZ pipeline (Camera)
 1. CameraX frame (ImageAnalysis)
-2. MRZ zone detection (heuristic)
+2. MRZ zone detection (heuristic). If detection fails, fall back to a bottom-of-frame ROI (~35–40% height with small side margins) so OCR can still run.
 3. ROI stabilization (moving average + IoU outlier rejection)
 4. Quality gate (sharpness)
 5. ML Kit OCR on raw/minimal input (no binarization)
@@ -34,6 +34,7 @@ Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (fr
 - Any conversion failure or OCR processing exception triggers the analyzer error callback, emits `ScanState.ERROR`, and still closes the `ImageProxy` if it has not been closed yet.
 - Frame delivery is logged at the start of each `analyze` call as `FRAME ts=<epoch_ms> w=<width> h=<height>`. Expect ~15–30 fps depending on the configured analyzer interval; continuous log lines indicate steady camera frame delivery, while gaps suggest dropped or stalled frames.
 - After bitmap conversion, `FRAME_STATS` logs capture per-frame metrics computed by `FrameStats` (mean brightness, contrast/stddev, Laplacian variance sharpness, and a local-mean residual noise estimate). These metrics are intended for diagnostics and for tuning thresholds that gate MRZ capture quality.
+- When MRZ auto-detection fails, the analyzer emits a `WAITING` scan state with a fallback ROI message, updates the ROI stabilizer with the fallback rectangle, and continues OCR. This keeps scan-state transitions (ML/Tesseract text found, MRZ found) flowing even without a detected MRZ band.
 
 ## MRZ scan UI feedback
 The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome. The `ScanState`-to-color mapping is:
