@@ -22,6 +22,18 @@ Use `MrzFields` (`com.example.emrtdreader.sdk.models.MrzFields`) to hold parsed 
 
 `MrzFields#toAccessKey()` returns an `AccessKey.Mrz` populated from the document number, birth date, and expiry date.
 
+## MRZ parsing and validation
+When you already have normalized MRZ lines (no whitespace, uppercase, filler `<` intact), feed them into
+`MrzParserValidator` to detect the format and validate the ICAO checksums:
+
+- Input model: `NormalizedMrz` (`com.example.emrtdreader.sdk.models.NormalizedMrz`) with `List<String> lines`.
+- Output model: `MrzParseResult` (`com.example.emrtdreader.sdk.models.MrzParseResult`) containing parsed TD3 fields,
+  checksum results, score components, and a `valid` flag that flips to true when all checksums pass.
+
+TD3 passports are parsed into document type, issuing country, surname, given names, document number, nationality,
+birth date, sex, expiry date, and personal number. The resulting `MrzFields` are attached to `MrzParseResult.fields`
+so callers can derive `AccessKey.Mrz` values directly.
+
 ## Permissions
 - Camera: `android.permission.CAMERA`
 - NFC: `android.permission.NFC`
