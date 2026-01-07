@@ -14,5 +14,13 @@ public abstract class AccessKey implements Serializable {
             this.dateOfBirthYYMMDD = dob;
             this.dateOfExpiryYYMMDD = doe;
         }
+
+        public Mrz(MrzKey key) {
+            this(key.getDocumentNumber(), key.getBirthDateYYMMDD(), key.getExpiryDateYYMMDD());
+        }
+
+        public MrzKey toMrzKey() {
+            return new MrzKey(documentNumber, dateOfBirthYYMMDD, dateOfExpiryYYMMDD);
+        }
     }
 }

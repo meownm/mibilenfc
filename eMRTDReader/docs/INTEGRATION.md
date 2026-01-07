@@ -14,6 +14,14 @@ dependencies {
 - App module: `com.example.emrtdreader`
 - SDK module: `com.example.emrtdreader.sdk`
 
+## MRZ field model
+Use `MrzFields` (`com.example.emrtdreader.sdk.models.MrzFields`) to hold parsed MRZ data in an immutable container:
+
+- `documentNumber`, `birthDateYYMMDD`, `expiryDateYYMMDD`
+- `nationality`, `sex`, `surname`, `givenNames`
+
+`MrzFields#toAccessKey()` returns an `AccessKey.Mrz` populated from the document number, birth date, and expiry date.
+
 ## Permissions
 - Camera: `android.permission.CAMERA`
 - NFC: `android.permission.NFC`
@@ -24,6 +32,9 @@ dependencies {
 - Auto mode tie-breaker: when dual OCR candidates tie on confidence, TD3 (passport) is preferred over TD1.
 - ML Kit only
 - Tesseract only
+
+## MRZ formats
+The SDK models MRZ formats as TD1, TD2, and TD3. TD2 is treated as a two-line format for access key parsing (document number, date of birth, date of expiry), while normalization and repair currently focus on TD1 and TD3.
 
 ## Tesseract preprocessing candidates
 When Auto mode falls back to Tesseract, the SDK runs a fixed candidate set (`PreprocessParamSet`) and selects the result with the best MRZ validity score. Each candidate defines the adaptive threshold block size, C offset, scale factor, and blur radius:
@@ -64,6 +75,19 @@ For callers that need per-field validation, `MrzValidation` can expose the TD1/T
 
 Each method returns an `MrzChecksums` object with booleans for the document number, birth date,
 expiry date, and composite (final) checksum, plus `passedCount` and `totalCount`.
+## MRZ failure reasons
+When downstream layers need to convey why MRZ parsing or validation failed, use
+`com.example.emrtdreader.sdk.models.MrzFailReason`. The enum values are:
+
+- `UNKNOWN_FORMAT`
+- `BAD_LENGTH`
+- `BAD_CHARSET`
+- `CHECKSUM_FAIL`
+- `LOW_STRUCTURE_SCORE`
+- `LOW_CONFIDENCE`
+- `INCONSISTENT_BETWEEN_FRAMES`
+### MRZ score components
+The SDK also exposes a lightweight `MrzScore` data container in `com.example.emrtdreader.sdk.ocr` with component fields for checksum, length, charset, structure, and stability. Call `recalcTotal()` to compute a weighted total (checksum ×10, length ×2, charset ×2, structure ×3, stability ×5) when aggregating custom scoring signals.
 
 ## OCR threading
 `MrzImageAnalyzer` and the OCR engines use a callback-based contract. OCR results and errors are delivered asynchronously (often on background threads), so UI layers should marshal updates onto the main thread as needed. The analyzer never blocks on OCR completion, allowing continuous frame delivery.

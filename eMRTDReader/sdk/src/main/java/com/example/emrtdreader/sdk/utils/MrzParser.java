@@ -9,7 +9,7 @@ public final class MrzParser {
 
     public static AccessKey.Mrz toAccessKey(MrzResult mrz) {
         if (mrz == null) return null;
-        if (mrz.format == MrzFormat.TD3) {
+        if (mrz.format == MrzFormat.TD3 || mrz.format == MrzFormat.TD2) {
             String l2 = mrz.line2;
             String doc = l2.substring(0, 9).replace("<", "");
             String dob = l2.substring(13, 19);
