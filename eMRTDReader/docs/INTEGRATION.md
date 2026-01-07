@@ -48,6 +48,12 @@ so callers can derive `AccessKey.Mrz` values directly.
 ## MRZ formats
 The SDK models MRZ formats as TD1, TD2, and TD3. TD2 is treated as a two-line format for access key parsing (document number, date of birth, date of expiry), while normalization and repair currently focus on TD1 and TD3.
 
+## MRZ tracking models
+When you need to capture ROI tracking state, use these SDK models:
+
+- `MrzBox` (`com.example.emrtdreader.sdk.models.MrzBox`) stores the tracked ROI bounds as `left`, `top`, `right`, and `bottom`.
+- `TrackResult` (`com.example.emrtdreader.sdk.models.TrackResult`) stores tracking state (`stable`, `stableCount`, `jitter`) alongside the tracked `MrzBox`.
+
 ## Tesseract preprocessing candidates
 When Auto mode falls back to Tesseract, the SDK runs a fixed candidate set (`PreprocessParamSet`) and selects the result with the best MRZ validity score. Each candidate defines the adaptive threshold block size, C offset, scale factor, and blur radius:
 
