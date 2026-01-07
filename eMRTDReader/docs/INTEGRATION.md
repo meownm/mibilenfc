@@ -45,6 +45,14 @@ so callers can derive `AccessKey.Mrz` values directly.
 - ML Kit only
 - Tesseract only
 
+## OCR output model
+When you need lightweight OCR telemetry, use `OcrOutput` (`com.example.emrtdreader.sdk.models.OcrOutput`) with:
+
+- `rawText`: raw OCR text as emitted by the engine.
+- `elapsedMs`: elapsed OCR runtime in milliseconds.
+- `whitelistRatio`: ratio of characters that match the MRZ whitelist.
+- `ltCount`: count of `<` filler characters in the OCR output.
+
 ## MRZ formats
 The SDK models MRZ formats as TD1, TD2, and TD3. TD2 is treated as a two-line format for access key parsing (document number, date of birth, date of expiry), while normalization and repair currently focus on TD1 and TD3.
 
