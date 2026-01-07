@@ -11,9 +11,9 @@
     <color name="red">#F44336</color>
     <color name="yellow">#FFEB3B</color>
     <color name="ic_launcher_background">#FFFFFF</color>
-    <color name="overlay_waiting_gray">#66808080</color>
-    <color name="overlay_mrz_green">#664CAF50</color>
-    <color name="overlay_mlkit_purple">#668E24AA</color>
-    <color name="overlay_tess_blue">#663F51B5</color>
-    <color name="overlay_error_red">#66F44336</color>
+    <color name="overlay_waiting_gray">#FF808080</color>
+    <color name="overlay_mrz_green">#FF4CAF50</color>
+    <color name="overlay_mlkit_purple">#FF8E24AA</color>
+    <color name="overlay_tess_blue">#FF3F51B5</color>
+    <color name="overlay_error_red">#FFF44336</color>
 </resources>

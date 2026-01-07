@@ -9,6 +9,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.Rect;
+import android.content.res.ColorStateList;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -31,6 +32,7 @@ import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowApplication;
 import org.robolectric.shadows.ShadowLooper;
 import org.robolectric.shadows.ShadowToast;
+import org.robolectric.util.ReflectionHelpers;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
@@ -375,6 +377,7 @@ public class MRZScanActivityTest {
         ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
         MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
 
+        activity.setOverlayAnimationDisabledForTesting(true);
         OcrResult ocr = new OcrResult(
                 "LINE1",
                 120,
@@ -385,7 +388,7 @@ public class MRZScanActivityTest {
         activity.onOcr(ocr, null, new Rect(0, 0, 10, 10));
         ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
 
-        int actual = getOverlayColor(activity);
+        int actual = getOverlayStrokeColor(activity);
         int expected = ContextCompat.getColor(activity, R.color.overlay_mlkit_purple);
         assertEquals(expected, actual);
     }
@@ -395,6 +398,7 @@ public class MRZScanActivityTest {
         ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
         MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
 
+        activity.setOverlayAnimationDisabledForTesting(true);
         OcrResult ocr = new OcrResult(
                 "LINE1",
                 120,
@@ -405,7 +409,7 @@ public class MRZScanActivityTest {
         activity.onOcr(ocr, null, new Rect(0, 0, 10, 10));
         ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
 
-        int actual = getOverlayColor(activity);
+        int actual = getOverlayStrokeColor(activity);
         int expected = ContextCompat.getColor(activity, R.color.overlay_tess_blue);
         assertEquals(expected, actual);
     }
@@ -415,6 +419,7 @@ public class MRZScanActivityTest {
         ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
         MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
 
+        activity.setOverlayAnimationDisabledForTesting(true);
         MrzResult mrz = new MrzResult(
                 "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
                 "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
@@ -432,7 +437,7 @@ public class MRZScanActivityTest {
         activity.onOcr(ocr, mrz, new Rect(0, 0, 10, 10));
         ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
 
-        int actual = getOverlayColor(activity);
+        int actual = getOverlayStrokeColor(activity);
         int expected = ContextCompat.getColor(activity, R.color.overlay_mrz_green);
         assertEquals(expected, actual);
     }
@@ -442,10 +447,11 @@ public class MRZScanActivityTest {
         ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
         MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
 
+        activity.setOverlayAnimationDisabledForTesting(true);
         activity.onOcr(null, null, new Rect(0, 0, 10, 10));
         ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
 
-        int actual = getOverlayColor(activity);
+        int actual = getOverlayStrokeColor(activity);
         int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
         assertEquals(expected, actual);
     }
@@ -455,22 +461,66 @@ public class MRZScanActivityTest {
         ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
         MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
 
+        activity.setOverlayAnimationDisabledForTesting(true);
         activity.onAnalyzerError("Frame decode failed", new RuntimeException("boom"));
         ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
 
         TextView logTextView = activity.findViewById(R.id.logTextView);
         assertTrue(logTextView.getText().toString().contains("Analyzer error: Frame decode failed"));
 
-        int actual = getOverlayColor(activity);
+        int actual = getOverlayStrokeColor(activity);
         int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
         assertEquals(expected, actual);
     }
 
-    private int getOverlayColor(MRZScanActivity activity) {
+    @Test
+    public void overlayUsesStrokeAndUpdatesOnScanStateTransitions() {
+        ShadowApplication.getInstance().grantPermissions(Manifest.permission.CAMERA);
+        MRZScanActivity activity = Robolectric.buildActivity(MRZScanActivity.class).setup().get();
+
+        activity.setOverlayAnimationDisabledForTesting(true);
+        activity.onScanState(ScanState.WAITING, null);
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+        int waitingStroke = getOverlayStrokeColor(activity);
+        int waitingExpected = ContextCompat.getColor(activity, R.color.overlay_waiting_gray);
+        assertEquals(waitingExpected, waitingStroke);
+
+        activity.onScanState(ScanState.ML_TEXT_FOUND, null);
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+        int mlStroke = getOverlayStrokeColor(activity);
+        int mlExpected = ContextCompat.getColor(activity, R.color.overlay_mlkit_purple);
+        assertEquals(mlExpected, mlStroke);
+
+        activity.onScanState(ScanState.ERROR, "Lens blocked");
+        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+
         GradientDrawable drawable = (GradientDrawable) activity.findViewById(R.id.analysisOverlayView).getBackground();
-        if (drawable.getColor() == null) {
+        ColorStateList fill = drawable.getColor();
+        if (fill != null) {
+            assertEquals(android.graphics.Color.TRANSPARENT, fill.getDefaultColor());
+        }
+        int strokeWidth = getOverlayStrokeWidth(drawable);
+        int expectedStrokeWidth = activity.getResources().getDimensionPixelSize(R.dimen.overlay_stroke_width);
+        assertEquals(expectedStrokeWidth, strokeWidth);
+
+        int errorStroke = getOverlayStrokeColor(activity);
+        int expected = ContextCompat.getColor(activity, R.color.overlay_error_red);
+        assertEquals(expected, errorStroke);
+    }
+
+    private int getOverlayStrokeColor(MRZScanActivity activity) {
+        GradientDrawable drawable = (GradientDrawable) activity.findViewById(R.id.analysisOverlayView).getBackground();
+        Object state = ReflectionHelpers.getField(drawable, "mGradientState");
+        ColorStateList stroke = ReflectionHelpers.getField(state, "mStrokeColor");
+        if (stroke == null) {
             return 0;
         }
-        return drawable.getColor().getDefaultColor();
+        return stroke.getDefaultColor();
+    }
+
+    private int getOverlayStrokeWidth(GradientDrawable drawable) {
+        Object state = ReflectionHelpers.getField(drawable, "mGradientState");
+        Integer strokeWidth = ReflectionHelpers.getField(state, "mStrokeWidth");
+        return strokeWidth == null ? 0 : strokeWidth;
     }
 }
