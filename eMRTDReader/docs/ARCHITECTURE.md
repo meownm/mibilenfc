@@ -46,6 +46,7 @@ The MRZ scan activity renders a colored border overlay on top of the camera prev
 
 ## NFC pipeline
 - Access key from MRZ (BAC) + PACE best-effort
+- `MrzKey` is the immutable value object for MRZ-derived access data (document number, birth date, expiry date) in `com.example.emrtdreader.sdk.domain`.
 - Read DG1/DG2/SOD
 - Passive Authentication: verify CMS signature in SOD + compare DG hashes
 - CSCA trust store: assets/csca/*.cer (optional for chain validation)
