@@ -34,4 +34,34 @@ public class MrzScoreTest {
         String mrz = LINE1 + "\n" + badLine2;
         assertEquals(0.75, MrzScore.score(mrz), 0.0001);
     }
+
+    @Test
+    public void recalcTotalReturnsWeightedSum() {
+        MrzScore score = new MrzScore();
+        score.checksumScore = 2;
+        score.lengthScore = 0.5f;
+        score.charsetScore = 0.75f;
+        score.structureScore = 1.0f;
+        score.stabilityScore = 0.2f;
+
+        score.recalcTotal();
+
+        assertEquals(2 * 10.0f + 0.5f * 2.0f + 0.75f * 2.0f + 1.0f * 3.0f + 0.2f * 5.0f,
+                score.totalScore,
+                0.0001f);
+    }
+
+    @Test
+    public void recalcTotalHandlesNegativeScores() {
+        MrzScore score = new MrzScore();
+        score.checksumScore = -1;
+        score.lengthScore = -0.5f;
+        score.charsetScore = 0.0f;
+        score.structureScore = 0.0f;
+        score.stabilityScore = 0.0f;
+
+        score.recalcTotal();
+
+        assertEquals(-1 * 10.0f + -0.5f * 2.0f, score.totalScore, 0.0001f);
+    }
 }

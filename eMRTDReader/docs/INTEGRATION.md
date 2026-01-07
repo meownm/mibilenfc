@@ -56,6 +56,9 @@ The MRZ scorer parses OCR text into TD3 lines and assigns a normalized score (0.
 
 If strict formatting fails, the score is `0.0`.
 
+### MRZ score components
+The SDK also exposes a lightweight `MrzScore` data container in `com.example.emrtdreader.sdk.ocr` with component fields for checksum, length, charset, structure, and stability. Call `recalcTotal()` to compute a weighted total (checksum ×10, length ×2, charset ×2, structure ×3, stability ×5) when aggregating custom scoring signals.
+
 ## OCR threading
 `MrzImageAnalyzer` and the OCR engines use a callback-based contract. OCR results and errors are delivered asynchronously (often on background threads), so UI layers should marshal updates onto the main thread as needed. The analyzer never blocks on OCR completion, allowing continuous frame delivery.
 
