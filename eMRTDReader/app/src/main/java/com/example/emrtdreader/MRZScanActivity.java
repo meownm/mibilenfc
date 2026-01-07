@@ -334,7 +334,13 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
 
     @Override
     public void onScanState(ScanState state, String message) {
-        runOnUiThread(() -> updateOverlayColor(resolveOverlayColor(state)));
+        runOnUiThread(() -> {
+            updateOverlayColor(resolveOverlayColor(state));
+            String logLine = buildScanStateLogLine(state, message);
+            if (logLine != null) {
+                appendLogLine(logLine);
+            }
+        });
     }
 
     @Override
@@ -457,6 +463,30 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         String stateLabel = state != null ? state.name() : "UNKNOWN";
         String msg = message != null ? message : "";
         return "[heartbeat] ts=" + ts + " state=" + stateLabel + " msg=" + msg;
+    }
+
+    private String buildScanStateLogLine(ScanState state, String message) {
+        if (state == null) {
+            return null;
+        }
+        switch (state) {
+            case ML_TEXT_FOUND:
+                return buildTimestampedLogLine("ML text detected");
+            case TESS_TEXT_FOUND:
+                return buildTimestampedLogLine("Tess text detected");
+            case WAITING:
+                return buildTimestampedLogLine("Waiting for MRZ");
+            case ERROR:
+                String detail = (message == null || message.trim().isEmpty()) ? "Unknown error" : message.trim();
+                return buildTimestampedLogLine("Error: " + detail);
+            default:
+                return null;
+        }
+    }
+
+    private String buildTimestampedLogLine(String message) {
+        long timestamp = System.currentTimeMillis();
+        return "[state] ts=" + timestamp + " " + message;
     }
 
     private String formatMetric(double metric) {
