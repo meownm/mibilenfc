@@ -25,6 +25,9 @@ dependencies {
 - ML Kit only
 - Tesseract only
 
+## MRZ formats
+The SDK models MRZ formats as TD1, TD2, and TD3. TD2 is treated as a two-line format for access key parsing (document number, date of birth, date of expiry), while normalization and repair currently focus on TD1 and TD3.
+
 ## Tesseract preprocessing candidates
 When Auto mode falls back to Tesseract, the SDK runs a fixed candidate set (`PreprocessParamSet`) and selects the result with the best MRZ validity score. Each candidate defines the adaptive threshold block size, C offset, scale factor, and blur radius:
 
