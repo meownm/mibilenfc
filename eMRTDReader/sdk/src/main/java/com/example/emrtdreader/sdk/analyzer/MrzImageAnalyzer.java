@@ -173,7 +173,7 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                 notifyFrameProcessed(ScanState.WAITING, MSG_NO_ROI, System.currentTimeMillis());
             }
 
-            Rect stable = rectAverager.update(detected, safeBitmap.getWidth(), safeBitmap.getHeight());
+            Rect stable = rectAverager.update(detected, frameWidth, frameHeight);
             Bitmap roiBmp = Bitmap.createBitmap(safeBitmap, stable.left, stable.top, stable.width(), stable.height());
 
             if (!ocrInFlight.compareAndSet(false, true)) {

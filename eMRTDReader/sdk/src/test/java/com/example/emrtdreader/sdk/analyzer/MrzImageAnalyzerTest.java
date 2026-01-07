@@ -16,6 +16,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.ImageFormat;
 import android.media.Image;
 
@@ -43,6 +44,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
@@ -426,6 +428,45 @@ public class MrzImageAnalyzerTest {
         PreprocessParamStore store = new PreprocessParamStore(context);
         assertTrue(store.load(cameraId, height, width) != null);
         assertTrue(store.load(cameraId, width, height) == null);
+    }
+
+    @Test
+    public void analyzeUsesRotatedFrameDimensionsForFallbackRoiRotation90() throws InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        MrzImageAnalyzer.Listener listener = mock(MrzImageAnalyzer.Listener.class);
+        CountDownLatch ocrLatch = new CountDownLatch(1);
+        AtomicReference<Rect> roiRef = new AtomicReference<>();
+        doAnswer(invocation -> {
+            roiRef.set(invocation.getArgument(2));
+            ocrLatch.countDown();
+            return null;
+        }).when(listener).onOcr(any(), any(), any());
+
+        int width = 160;
+        int height = 240;
+        MrzImageAnalyzer analyzer = new MrzImageAnalyzer(
+                context,
+                new FixedOcrEngine(new OcrResult(
+                        TD3_MRZ,
+                        1,
+                        new OcrMetrics(0, 0, 0),
+                        OcrResult.Engine.ML_KIT
+                )),
+                mock(OcrEngine.class),
+                DualOcrRunner.Mode.MLKIT_ONLY,
+                0,
+                listener,
+                createTestConverter(createSolidBitmap(width, height, Color.WHITE))
+        );
+
+        analyzer.analyze(createImageProxy(new AtomicBoolean(false), width, height, 90));
+
+        assertTrue(ocrLatch.await(2, TimeUnit.SECONDS));
+        Rect roi = roiRef.get();
+        assertTrue(roi != null);
+        assertTrue(roi.bottom == width);
+        assertTrue(roi.right > width);
+        assertTrue(roi.bottom != height);
     }
 
     @Test
