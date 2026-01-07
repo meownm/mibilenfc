@@ -59,6 +59,17 @@ The MRZ scorer parses OCR text into TD3 lines and assigns a normalized score (0.
 
 If strict formatting fails, the score is `0.0`.
 
+## MRZ failure reasons
+When downstream layers need to convey why MRZ parsing or validation failed, use
+`com.example.emrtdreader.sdk.models.MrzFailReason`. The enum values are:
+
+- `UNKNOWN_FORMAT`
+- `BAD_LENGTH`
+- `BAD_CHARSET`
+- `CHECKSUM_FAIL`
+- `LOW_STRUCTURE_SCORE`
+- `LOW_CONFIDENCE`
+- `INCONSISTENT_BETWEEN_FRAMES`
 ### MRZ score components
 The SDK also exposes a lightweight `MrzScore` data container in `com.example.emrtdreader.sdk.ocr` with component fields for checksum, length, charset, structure, and stability. Call `recalcTotal()` to compute a weighted total (checksum ×10, length ×2, charset ×2, structure ×3, stability ×5) when aggregating custom scoring signals.
 
