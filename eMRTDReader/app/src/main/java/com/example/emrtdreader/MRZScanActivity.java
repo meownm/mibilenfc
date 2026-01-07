@@ -419,7 +419,10 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     private void applyOverlayColor(@ColorInt int color) {
         Drawable background = analysisOverlayView.getBackground();
         if (background instanceof GradientDrawable) {
-            ((GradientDrawable) background.mutate()).setColor(color);
+            GradientDrawable drawable = (GradientDrawable) background.mutate();
+            int strokeWidth = getResources().getDimensionPixelSize(R.dimen.overlay_stroke_width);
+            drawable.setColor(android.graphics.Color.TRANSPARENT);
+            drawable.setStroke(strokeWidth, color);
         } else {
             analysisOverlayView.setBackgroundColor(color);
         }

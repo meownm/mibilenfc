@@ -37,7 +37,7 @@ Listener callbacks from `MrzImageAnalyzer` now include `ScanState` emissions (fr
 - When MRZ auto-detection fails, the analyzer emits a `WAITING` scan state with a fallback ROI message, updates the ROI stabilizer with the fallback rectangle, and continues OCR. This keeps scan-state transitions (ML/Tesseract text found, MRZ found) flowing even without a detected MRZ band.
 
 ## MRZ scan UI feedback
-The MRZ scan activity renders a colored overlay on top of the camera preview to indicate the most recent analyzer outcome. The `ScanState`-to-color mapping is:
+The MRZ scan activity renders a colored border overlay on top of the camera preview to indicate the most recent analyzer outcome; the overlay is a transparent fill with an opaque stroke so only the border is visible. The `ScanState`-to-color mapping is:
 - `WAITING`: gray (`@color/overlay_waiting_gray`).
 - `ML_TEXT_FOUND`: purple (`@color/overlay_mlkit_purple`).
 - `TESS_TEXT_FOUND`: blue (`@color/overlay_tess_blue`).
