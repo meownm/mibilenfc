@@ -40,6 +40,7 @@ To speed up Auto mode, the SDK stores the best-performing `PreprocessParams` per
 
 - Preferences file: `mrz_preprocess_params`
 - Key format: `preprocess_params:<cameraId>:<width>x<height>`
+- The `width`/`height` values are taken after frame rotation is applied, so portrait/landscape orientation maps to distinct entries.
 
 Lifecycle:
 - After a successful candidate selection, the best parameter set is persisted for that camera/resolution.
