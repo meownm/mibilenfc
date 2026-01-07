@@ -21,6 +21,7 @@ dependencies {
 
 ## OCR modes
 - Auto (ML-first): ML Kit runs on lightweight MRZ preprocessing (no binarization); if the text does not achieve a perfect MRZ score, Tesseract runs on a scaled + binarized bitmap and the higher-scoring candidate is selected
+- Auto mode tie-breaker: when dual OCR candidates tie on confidence, TD3 (passport) is preferred over TD1.
 - ML Kit only
 - Tesseract only
 

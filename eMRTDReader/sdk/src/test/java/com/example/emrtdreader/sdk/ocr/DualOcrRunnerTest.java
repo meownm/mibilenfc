@@ -323,6 +323,17 @@ public class DualOcrRunnerTest {
         assertEquals(first, result);
     }
 
+    @Test
+    public void pickBestReturnsFirstWhenConfidenceAndFormatTieWithDifferentData() throws Exception {
+        MrzResult first = new MrzResult("L1", "L2", "L3", MrzFormat.TD1, 2);
+        MrzResult second = new MrzResult("X1", "X2", "X3", MrzFormat.TD1, 2);
+
+        MrzResult result = invokePickBest(first, second);
+
+        assertNotNull(result);
+        assertEquals(first, result);
+    }
+
     private static Bitmap createGradientBitmap(int width, int height) {
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         for (int y = 0; y < height; y++) {
