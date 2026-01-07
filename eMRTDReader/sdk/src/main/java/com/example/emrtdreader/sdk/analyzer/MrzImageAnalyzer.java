@@ -7,18 +7,16 @@ import android.graphics.Rect;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.VisibleForTesting;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
 
 import com.example.emrtdreader.sdk.analysis.ScanState;
 import com.example.emrtdreader.sdk.models.MrzResult;
 import com.example.emrtdreader.sdk.models.OcrResult;
-import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
 import com.example.emrtdreader.sdk.ocr.FrameStats;
 import com.example.emrtdreader.sdk.ocr.MrzAutoDetector;
-import com.example.emrtdreader.sdk.ocr.OcrRouter;
 import com.example.emrtdreader.sdk.ocr.OcrEngine;
+import com.example.emrtdreader.sdk.ocr.OcrRouter;
 import com.example.emrtdreader.sdk.ocr.RectAverager;
 import com.example.emrtdreader.sdk.utils.MrzBurstAggregator;
 
@@ -26,267 +24,207 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * CameraX analyzer that:
- * - finds MRZ band automatically (deterministic)
- * - stabilizes ROI across frames
- * - runs OCR (MLKit/Tesseract or dual)
- * - aggregates MRZ across bursts
+ * Final MRZ CameraX analyzer.
+ *
+ * Properties:
+ * - analyze() is lightweight (no OCR, no heavy scaling loops)
+ * - heavy work runs in single-thread background pipeline
+ * - MRZ is accepted ONLY from Tesseract
+ * - ML Kit is UI-only (text presence feedback)
+ * - stable ROI + burst aggregation
  */
-public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
-    private static final String TAG = "MRZ";
-    private static final String MSG_NO_ROI = "No MRZ ROI detected; using fallback ROI";
-    private static final String MSG_SKIP_INTERVAL = "Frame skipped: interval";
-    private static final String MSG_SKIP_OCR_IN_FLIGHT = "Frame skipped: OCR in flight";
-    private static final float FALLBACK_ROI_HEIGHT_RATIO = 0.38f;
-    private static final float FALLBACK_ROI_SIDE_MARGIN_RATIO = 0.05f;
+public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
+    private static final String TAG = "MRZ";
+
+    // ---- config ----
+    private static final long DEFAULT_INTERVAL_MS = 180;
+
+    // ---- deps ----
+    private final Context appContext;
+    private final OcrEngine mlKitEngine;
+    private final OcrEngine tessEngine;
+    private final Listener listener;
+
+    // ---- state ----
+    private final MrzPipelineExecutor pipelineExecutor = new MrzPipelineExecutor();
+    private final RectAverager rectAverager = new RectAverager(6, 0.35f);
+    private final MrzBurstAggregator burstAggregator = new MrzBurstAggregator(3, 12);
+
+    private final AtomicBoolean finished = new AtomicBoolean(false);
+    private final AtomicBoolean ocrInFlight = new AtomicBoolean(false);
+
+    private long lastAnalyzeTs = 0L;
+    private final long intervalMs;
+
+    // ---- listener ----
     public interface Listener {
         void onOcr(OcrResult ocr, MrzResult bestSingle, Rect roi);
         void onFinalMrz(MrzResult finalMrz, Rect roi);
         void onAnalyzerError(String message, Throwable error);
         default void onScanState(ScanState state, String message) {}
-        default void onFrameProcessed(ScanState state, String message, long timestampMs) {}
     }
 
-    private final Context appContext;
-    private final Listener listener;
-    private final MrzBurstAggregator aggregator;
-    private final RectAverager rectAverager;
-    private final AtomicBoolean finished = new AtomicBoolean(false);
-    private final AtomicBoolean ocrInFlight = new AtomicBoolean(false);
-    private final YuvBitmapConverter yuvBitmapConverter;
-    private final String cameraId;
-
-    private volatile OcrEngine mlKitEngine;
-    private volatile OcrEngine tessEngine;
-    private volatile DualOcrRunner.Mode mode;
-
-    private long lastTs = 0L;
-    private final long intervalMs;
-
-    public MrzImageAnalyzer(Context ctx,
-                           OcrEngine mlKit,
-                           OcrEngine tess,
-                           DualOcrRunner.Mode mode,
-                           long intervalMs,
-                           Listener listener) {
-        this(ctx, mlKit, tess, mode, intervalMs, "default", listener, new YuvBitmapConverter(ctx.getApplicationContext()));
+    // ---- ctor ----
+    public MrzImageAnalyzer(
+            Context ctx,
+            OcrEngine mlKitEngine,
+            OcrEngine tessEngine,
+            Listener listener
+    ) {
+        this(ctx, mlKitEngine, tessEngine, DEFAULT_INTERVAL_MS, listener);
     }
 
-    public MrzImageAnalyzer(Context ctx,
-                            OcrEngine mlKit,
-                            OcrEngine tess,
-                            DualOcrRunner.Mode mode,
-                            long intervalMs,
-                            String cameraId,
-                            Listener listener) {
-        this(ctx, mlKit, tess, mode, intervalMs, cameraId, listener, new YuvBitmapConverter(ctx.getApplicationContext()));
-    }
-
-    @VisibleForTesting
-    MrzImageAnalyzer(Context ctx,
-                     OcrEngine mlKit,
-                     OcrEngine tess,
-                     DualOcrRunner.Mode mode,
-                     long intervalMs,
-                     Listener listener,
-                     YuvBitmapConverter yuvBitmapConverter) {
-        this(ctx, mlKit, tess, mode, intervalMs, "default", listener, yuvBitmapConverter);
-    }
-
-    @VisibleForTesting
-    MrzImageAnalyzer(Context ctx,
-                     OcrEngine mlKit,
-                     OcrEngine tess,
-                     DualOcrRunner.Mode mode,
-                     long intervalMs,
-                     String cameraId,
-                     Listener listener,
-                     YuvBitmapConverter yuvBitmapConverter) {
+    public MrzImageAnalyzer(
+            Context ctx,
+            OcrEngine mlKitEngine,
+            OcrEngine tessEngine,
+            long intervalMs,
+            Listener listener
+    ) {
         this.appContext = ctx.getApplicationContext();
-        this.mlKitEngine = mlKit;
-        this.tessEngine = tess;
-        this.mode = mode;
-        this.intervalMs = intervalMs;
+        this.mlKitEngine = mlKitEngine;
+        this.tessEngine = tessEngine;
         this.listener = listener;
-        this.aggregator = new MrzBurstAggregator(3, 12);
-        this.rectAverager = new RectAverager(6, 0.35f);
-        this.yuvBitmapConverter = yuvBitmapConverter;
-        this.cameraId = cameraId;
+        this.intervalMs = intervalMs;
     }
 
-    public void setMode(DualOcrRunner.Mode mode) {
-        this.mode = mode;
-    }
-
-    public void resetBurst() {
+    // ---- public API ----
+    public void reset() {
         finished.set(false);
-        aggregator.reset();
+        burstAggregator.reset();
         rectAverager.reset();
     }
 
+    // ---- CameraX entry ----
     @Override
     public void analyze(@NonNull ImageProxy image) {
+        long now = System.currentTimeMillis();
+
         try {
-            if (finished.get()) {
-                return;
-            }
-            log("FRAME ts=" + System.currentTimeMillis() + " w=" + image.getWidth() + " h=" + image.getHeight());
-            long now = System.currentTimeMillis();
-            if (now - lastTs < intervalMs) {
-                notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_INTERVAL, now);
-                return;
-            }
-            lastTs = now;
+            if (finished.get()) return;
+            if (now - lastAnalyzeTs < intervalMs) return;
+            lastAnalyzeTs = now;
 
-            int rotationDeg = image.getImageInfo().getRotationDegrees();
-            Bitmap bitmap = imageProxyToBitmap(image);
-            Bitmap safeBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
-            if (safeBitmap == null) {
-                throw new IllegalStateException("Bitmap copy failed");
-            }
+            // lightweight conversion ONLY
+            Bitmap frame = ImageProxyUtils.toBitmap(image);
+            if (frame == null) return;
 
-            if (rotationDeg != 0) {
-                Matrix m = new Matrix();
-                m.postRotate(rotationDeg);
-                safeBitmap = Bitmap.createBitmap(safeBitmap, 0, 0, safeBitmap.getWidth(), safeBitmap.getHeight(), m, true);
-                rotationDeg = 0;
-            }
-            int frameWidth = safeBitmap.getWidth();
-            int frameHeight = safeBitmap.getHeight();
+            Bitmap safeBitmap = frame.copy(Bitmap.Config.ARGB_8888, false);
+            if (safeBitmap == null) return;
 
-            FrameStats stats = FrameStats.compute(safeBitmap);
-            log("FRAME_STATS ts=" + System.currentTimeMillis()
-                    + " mean=" + String.format(Locale.US, "%.1f", stats.brightness)
-                    + " contrast=" + String.format(Locale.US, "%.1f", stats.contrast)
-                    + " sharp=" + String.format(Locale.US, "%.1f", stats.sharpness)
-                    + " noise=" + String.format(Locale.US, "%.2f", stats.noise));
+            pipelineExecutor.submit(() -> runPipeline(safeBitmap));
 
-            Rect detected = MrzAutoDetector.detect(safeBitmap);
+        } catch (Throwable t) {
+            notifyError("Analyzer error", t);
+        } finally {
+            image.close();
+        }
+    }
+
+    // ---- background pipeline ----
+    private void runPipeline(Bitmap frameBitmap) {
+        if (finished.get()) return;
+        if (!ocrInFlight.compareAndSet(false, true)) return;
+
+        try {
+            // --- stats (optional, debug only) ---
+            FrameStats stats = FrameStats.compute(frameBitmap);
+            Log.d(TAG, String.format(
+                    Locale.US,
+                    "FRAME mean=%.1f contrast=%.1f sharp=%.1f",
+                    stats.brightness,
+                    stats.contrast,
+                    stats.sharpness
+            ));
+
+            // --- MRZ detect ---
+            Rect detected = MrzAutoDetector.detect(frameBitmap);
             if (detected == null) {
-                detected = buildFallbackRoi(frameWidth, frameHeight);
-                notifyFrameProcessed(ScanState.WAITING, MSG_NO_ROI, System.currentTimeMillis());
+                notifyState(ScanState.WAITING, "Searching MRZ");
+                return;
             }
 
-            Rect stable = rectAverager.update(detected, frameWidth, frameHeight);
-            Bitmap rawRoi = Bitmap.createBitmap(
-                    safeBitmap,
+            // --- stabilize ROI ---
+            Rect stable = rectAverager.update(
+                    detected,
+                    frameBitmap.getWidth(),
+                    frameBitmap.getHeight()
+            );
+
+            // --- crop ROI ---
+            Bitmap roi = Bitmap.createBitmap(
+                    frameBitmap,
                     stable.left,
                     stable.top,
                     stable.width(),
                     stable.height()
             );
 
-            Bitmap roiBmp = rectifyAndScaleMrz(rawRoi);
+            // --- OCR routing ---
+            OcrRouter.runAsync(
+                    appContext,
+                    mlKitEngine,
+                    tessEngine,
+                    roi,
+                    0,
+                    "camera",
+                    frameBitmap.getWidth(),
+                    frameBitmap.getHeight(),
+                    new OcrRouter.Callback() {
 
-            if (!ocrInFlight.compareAndSet(false, true)) {
-                notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_OCR_IN_FLIGHT, System.currentTimeMillis());
-                return;
-            }
+                        @Override
+                        public void onSuccess(OcrRouter.Result result, MrzResult mrz) {
+                            ocrInFlight.set(false);
 
-            runOcrAsync(roiBmp, rotationDeg, stable, frameWidth, frameHeight);
-        } catch (Throwable e) {
-            String message = (e instanceof IllegalStateException) ? e.getMessage() : "Analyzer error while processing frame";
-            if (message == null || message.trim().isEmpty()) {
-                message = "Analyzer error while processing frame";
-            }
-            notifyError(message, e);
-        } finally {
-            image.close();
-        }
-    }
-
-    private void runOcrAsync(Bitmap roiBmp, int rotationDeg, Rect stable, int frameWidth, int frameHeight) {
-        if (mode == DualOcrRunner.Mode.AUTO_DUAL) {
-            OcrRouter.runAsync(appContext, mlKitEngine, tessEngine, roiBmp, rotationDeg,
-                    cameraId, frameWidth, frameHeight, new OcrRouter.Callback() {
-                @Override
-                public void onSuccess(OcrRouter.Result result, MrzResult mrz) {
-                    ocrInFlight.set(false);
-                    if (finished.get()) {
-                        return;
-                    }
-
-                    OcrResult ocr = new OcrResult(
-                            result.finalText,
-                            result.elapsedMs,
-                            result.metrics,
-                            result.engine
-                    );
-
-                    if (listener != null) {
-                        listener.onOcr(ocr, mrz, stable);
-                        notifyOcrState(ocr);
-                    }
-
-                    if (mrz != null) {
-                        if (listener != null) listener.onScanState(ScanState.MRZ_FOUND, "MRZ detected");
-                        MrzResult finalMrz = aggregator.addAndMaybeAggregate(mrz);
-                        if (finalMrz != null) {
-                            finished.set(true);
-                            if (listener != null) listener.onFinalMrz(finalMrz, stable);
-                        }
-                    } else if (listener != null) {
-                        listener.onScanState(ScanState.WAITING, "Waiting for MRZ");
-                    }
-                }
-
-                @Override
-                public void onFailure(Throwable error) {
-                    ocrInFlight.set(false);
-                    String cause = error != null ? error.getMessage() : null;
-                    if (cause == null || cause.trim().isEmpty()) {
-                        cause = "unknown error";
-                    }
-                    notifyError("OCR failed: " + cause, error);
-                }
-            });
-            return;
-        }
-
-        DualOcrRunner.runAsync(appContext, mode, mlKitEngine, tessEngine, roiBmp, rotationDeg,
-                new DualOcrRunner.RunCallback() {
-                    @Override
-                    public void onSuccess(DualOcrRunner.RunResult rr) {
-                        ocrInFlight.set(false);
-                        if (finished.get()) {
-                            return;
-                        }
-
-                        if (listener != null) {
-                            listener.onOcr(rr.ocr, rr.mrz, stable);
-                            notifyOcrState(rr.ocr);
-                        }
-
-                        if (rr.mrz != null) {
-                            if (listener != null) listener.onScanState(ScanState.MRZ_FOUND, "MRZ detected");
-                            MrzResult finalMrz = aggregator.addAndMaybeAggregate(rr.mrz);
-                            if (finalMrz != null) {
-                                finished.set(true);
-                                if (listener != null) listener.onFinalMrz(finalMrz, stable);
+                            // UI feedback (text presence)
+                            if (listener != null) {
+                                listener.onOcr(
+                                        new OcrResult(
+                                                result.finalText,
+                                                result.elapsedMs,
+                                                result.metrics,
+                                                result.engine
+                                        ),
+                                        mrz,
+                                        stable
+                                );
                             }
-                        } else if (listener != null) {
-                            listener.onScanState(ScanState.WAITING, "Waiting for MRZ");
+
+                            // ❗ MRZ принимается ТОЛЬКО если Tesseract дал валидный результат
+                            if (mrz != null) {
+                                notifyState(ScanState.MRZ_FOUND, "MRZ detected");
+
+                                MrzResult finalMrz =
+                                        burstAggregator.addAndMaybeAggregate(mrz);
+
+                                if (finalMrz != null) {
+                                    finished.set(true);
+                                    notifyState(ScanState.CONFIRMED, "MRZ confirmed");
+                                    if (listener != null) {
+                                        listener.onFinalMrz(finalMrz, stable);
+                                    }
+                                }
+                            } else {
+                                notifyState(ScanState.WAITING, "Waiting for MRZ");
+                            }
+                        }
+
+                        @Override
+                        public void onFailure(Throwable error) {
+                            ocrInFlight.set(false);
+                            notifyError("OCR failed", error);
                         }
                     }
+            );
 
-                    @Override
-                    public void onFailure(Throwable error) {
-                        ocrInFlight.set(false);
-                        String cause = error != null ? error.getMessage() : null;
-                        if (cause == null || cause.trim().isEmpty()) {
-                            cause = "unknown error";
-                        }
-                        notifyError("OCR failed: " + cause, error);
-                    }
-                });
+        } catch (Throwable t) {
+            ocrInFlight.set(false);
+            notifyError("Pipeline error", t);
+        }
     }
 
-    private Bitmap imageProxyToBitmap(ImageProxy image) {
-        // Converts via YuvBitmapConverter using NV21 + JPEG round-trip for YUV_420_888 frames.
-        return yuvBitmapConverter.toBitmap(image);
-    }
-
+    // ---- helpers ----
     private void notifyError(String message, Throwable error) {
         Log.e(TAG, message, error);
         if (listener != null) {
@@ -295,74 +233,9 @@ public class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         }
     }
 
-    private void notifyFrameProcessed(ScanState state, String message, long timestampMs) {
+    private void notifyState(ScanState state, String message) {
         if (listener != null) {
-            listener.onFrameProcessed(state, message, timestampMs);
             listener.onScanState(state, message);
         }
     }
-
-    private void log(String message) {
-        Log.d(TAG, message);
-    }
-
-    private void notifyOcrState(OcrResult ocr) {
-        if (listener == null || ocr == null) return;
-        if (ocr.rawText == null || ocr.rawText.trim().isEmpty()) return;
-
-        if (ocr.engine == OcrResult.Engine.ML_KIT) {
-            listener.onScanState(ScanState.ML_TEXT_FOUND, "ML Kit OCR text detected");
-        } else if (ocr.engine == OcrResult.Engine.TESSERACT) {
-            listener.onScanState(ScanState.TESS_TEXT_FOUND, "Tesseract OCR text detected");
-        }
-    }
-
-    private static Rect buildFallbackRoi(int frameWidth, int frameHeight) {
-        int marginX = Math.round(frameWidth * FALLBACK_ROI_SIDE_MARGIN_RATIO);
-        int roiHeight = Math.round(frameHeight * FALLBACK_ROI_HEIGHT_RATIO);
-        int left = Math.max(0, marginX);
-        int right = Math.min(frameWidth, frameWidth - marginX);
-        int bottom = frameHeight;
-        int top = Math.max(0, bottom - roiHeight);
-        if (right <= left) {
-            left = 0;
-            right = frameWidth;
-        }
-        if (bottom <= top) {
-            top = 0;
-            bottom = frameHeight;
-        }
-        return new Rect(left, top, right, bottom);
-    }
-    private static Bitmap rectifyAndScaleMrz(Bitmap src) {
-        int w = src.getWidth();
-        int h = src.getHeight();
-
-        // --- 1. DESKEW (очень простой) ---
-        // Для начала: без сложной оценки угла — работает уже на 80%
-        // (можно добавить позже)
-        Bitmap deskewed = src;
-
-        // --- 2. SCALE под MRZ ---
-        // Цель: строка MRZ ≈ 100 px
-        int targetLinePx = 100;
-        int currentLinePx = Math.max(1, h / 2);
-        float scale = targetLinePx / (float) currentLinePx;
-
-        // Ограничим масштаб
-        scale = Math.max(1.5f, Math.min(scale, 4.0f));
-
-        int newW = Math.round(w * scale);
-        int newH = Math.round(h * scale);
-
-        Bitmap scaled = Bitmap.createScaledBitmap(deskewed, newW, newH, false);
-
-        Log.d(TAG, "MRZ_RECTIFY w=" + w + " h=" + h
-                + " -> " + newW + "x" + newH
-                + " linePx=" + (newH / 2)
-                + " scale=" + scale);
-
-        return scaled;
-    }
-
 }
