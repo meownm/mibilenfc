@@ -337,6 +337,20 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         runOnUiThread(() -> {
             updateOverlayColor(resolveOverlayColor(state));
             appendScanStateLogLine(state, message);
+
+            // Ensure the user always sees what's going on (no silent failures).
+            if (mrzDebugOverlay != null) {
+                mrzDebugOverlay.updateState(state, message);
+            }
+
+            // Do not overwrite an already accepted MRZ in the main text.
+            boolean hasMrz = (latestMrz != null);
+            if (!hasMrz) {
+                String uiMsg = mapScanStateToUserMessage(state, message);
+                if (uiMsg != null && !uiMsg.trim().isEmpty()) {
+                    mrzTextView.setText(uiMsg);
+                }
+            }
         });
     }
 
@@ -364,13 +378,23 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         switch (state) {
             case MRZ_FOUND:
                 return ContextCompat.getColor(this, R.color.overlay_mrz_green);
+
             case ML_TEXT_FOUND:
                 return ContextCompat.getColor(this, R.color.overlay_mlkit_purple);
             case TESS_TEXT_FOUND:
                 return ContextCompat.getColor(this, R.color.overlay_tess_blue);
+
+            case MRZ_FOUND_LOW_CONFIDENCE:
+            case OCR_IN_FLIGHT:
+            case WAITING:
+                return ContextCompat.getColor(this, R.color.overlay_waiting_gray);
+
+            case MRZ_NOT_FOUND:
+            case MRZ_FOUND_OCR_REJECTED:
+            case MRZ_FOUND_INVALID_CHECKSUM:
             case ERROR:
                 return ContextCompat.getColor(this, R.color.overlay_error_red);
-            case WAITING:
+
             default:
                 return ContextCompat.getColor(this, R.color.overlay_waiting_gray);
         }

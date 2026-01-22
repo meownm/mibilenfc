@@ -39,6 +39,8 @@ public class MrzDebugOverlayView extends View {
     private MrzResult mrz;
     private ScanState state;
 
+    private String stateMessage;
+
     // image / view sizes
     private int bitmapW;
     private int bitmapH;
@@ -89,6 +91,13 @@ public class MrzDebugOverlayView extends View {
 
     public void updateState(ScanState state) {
         this.state = state;
+        this.stateMessage = null;
+        postInvalidate();
+    }
+
+    public void updateState(ScanState state, String message) {
+        this.state = state;
+        this.stateMessage = message;
         postInvalidate();
     }
 
@@ -110,10 +119,13 @@ public class MrzDebugOverlayView extends View {
         int lineH = 34;
         int y = padding + lineH;
 
-        int panelH = padding * 2 + lineH * 7;
+        int panelH = padding * 2 + lineH * 8;
         c.drawRect(0, 0, getWidth(), panelH, bgPaint);
 
         drawLine(c, "STATE: " + safe(state), padding, y, textPaint); y += lineH;
+        if (stateMessage != null && !stateMessage.trim().isEmpty()) {
+            drawLine(c, "MSG: " + shorten(stateMessage), padding, y, warnPaint); y += lineH;
+        }
 
         if (ocr != null) {
             drawLine(c,
