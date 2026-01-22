@@ -1,40 +1,27 @@
 package com.example.emrtdreader.sdk.analysis;
 
-/**
- * High-level state of the MRZ scanning pipeline.
- *
- * NOTE:
- * This enum is used both by the analyzer pipeline and by the UI layer.
- * Keep it stable and additive (avoid renames) to preserve backwards compatibility.
- */
 public enum ScanState {
-    /** Camera active, pipeline has not produced a meaningful decision yet. */
     WAITING,
-
-    /** Analyzer skipped frames because OCR job is already running. */
+    /** OCR is currently running; frames may be skipped due to backpressure. */
     OCR_IN_FLIGHT,
 
-    /** MRZ region could not be detected (or ROI quality is too low for reliable OCR). */
+    /** MRZ region was not detected or not stable enough to run OCR. */
     MRZ_NOT_FOUND,
 
-    /** MRZ-like text exists, but quality/confidence is low; user action is required. */
-    MRZ_FOUND_LOW_CONFIDENCE,
+    /** OCR produced text, but MRZ could not be parsed/validated. */
+    MRZ_OCR_REJECTED,
 
-    /** OCR ran, but did not produce a usable MRZ (empty / bad charset / bad structure). */
-    MRZ_FOUND_OCR_REJECTED,
+    /** OCR produced an MRZ candidate, but validation did not pass. */
+    MRZ_INVALID,
 
-    /** MRZ was parsed, but failed validation checks (e.g., checksum). */
-    MRZ_FOUND_INVALID_CHECKSUM,
+    /** Retry is required (timeouts / repeated failures / unstable frames). */
+    MRZ_RETRY_REQUIRED,
 
-    /** MRZ successfully detected and accepted by the pipeline. */
+    /** OCR took too long; considered timed out. */
+    MRZ_OCR_TIMEOUT,
+
     MRZ_FOUND,
-
-    /** Non-empty text from ML Kit (for feedback only). */
     ML_TEXT_FOUND,
-
-    /** Non-empty text from Tesseract (for feedback only). */
     TESS_TEXT_FOUND,
-
-    /** Analyzer/pipeline error. */
     ERROR
 }

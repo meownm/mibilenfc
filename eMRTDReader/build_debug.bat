@@ -15,7 +15,6 @@ if exist gradlew.bat (
 
 if %ERRORLEVEL% NEQ 0 (
   echo Build failed.
- pause
   exit /b %ERRORLEVEL%
 )
 
@@ -23,5 +22,4 @@ echo.
 echo Build OK. APK:
 echo   app\build\outputs\apk\debug\app-debug.apk
 echo.
- pause
 endlocal

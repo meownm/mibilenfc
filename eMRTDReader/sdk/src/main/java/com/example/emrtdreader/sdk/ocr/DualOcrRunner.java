@@ -173,7 +173,7 @@ public final class DualOcrRunner {
         OcrOutcome mlOutcome = mlFuture.isDone() ? mlFuture.getNow(null) : null;
         OcrOutcome tessOutcome = tessFuture.isDone() ? tessFuture.getNow(null) : null;
 
-        // MRZ ONLY from Tesseract
+        // Primary policy: MRZ from Tesseract.
         MrzResult mrz = (tessOutcome != null) ? tessOutcome.mrz : null;
 
         // Choose OCR text for UI: prefer ML Kit if it has any non-empty text, else Tesseract
@@ -190,6 +190,14 @@ public final class DualOcrRunner {
         }
 
         if (chosenOcr != null) {
+            // Pragmatic fallback: if Tesseract didn't yield MRZ, try deriving MRZ from
+            // the chosen OCR text (typically ML Kit) and accept it only if it's strong.
+            if (mrz == null && !isBlank(chosenOcr.rawText)) {
+                MrzResult fromText = MrzTextProcessor.normalizeAndRepair(chosenOcr.rawText);
+                if (fromText != null && fromText.confidence >= 4) {
+                    mrz = fromText;
+                }
+            }
             callback.onSuccess(new RunResult(chosenOcr, mrz));
             return;
         }

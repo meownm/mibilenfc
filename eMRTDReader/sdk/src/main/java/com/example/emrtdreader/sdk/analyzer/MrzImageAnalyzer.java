@@ -13,10 +13,6 @@ import androidx.camera.core.ImageProxy;
 
 import com.example.emrtdreader.sdk.analysis.ScanState;
 import com.example.emrtdreader.sdk.models.MrzResult;
-import com.example.emrtdreader.sdk.models.NormalizedMrz;
-import com.example.emrtdreader.sdk.models.MrzParseResult;
-import com.example.emrtdreader.sdk.utils.MrzParserValidator;
-import com.example.emrtdreader.sdk.ocr.MrzTextProcessor;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
 import com.example.emrtdreader.sdk.ocr.DualOcrRunner;
@@ -72,6 +68,19 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
     private final AtomicBoolean finished = new AtomicBoolean(false);
     private final AtomicBoolean ocrInFlight = new AtomicBoolean(false);
+
+    // Backpressure/timeout handling
+    private volatile long ocrInFlightSinceMs = 0L;
+    private static final long OCR_IN_FLIGHT_TIMEOUT_MS = 1200L;
+
+    // Simple degradation counters (reset on success)
+    private int consecutiveMrzNotFound = 0;
+    private int consecutiveMrzRejected = 0;
+    private int consecutiveMrzInvalid = 0;
+
+    private static final int MAX_CONSEC_NOT_FOUND = 5;
+    private static final int MAX_CONSEC_REJECTED = 3;
+    private static final int MAX_CONSEC_INVALID = 3;
 
     private volatile OcrEngine mlKitEngine;
     private volatile OcrEngine tessEngine;
@@ -135,7 +144,6 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             if (finished.get()) return;
 
             if (now - lastTs < intervalMs) {
-                if (listener != null) listener.onScanState(ScanState.WAITING, "Analyzing...");
                 notifyFrameProcessed(ScanState.WAITING, MSG_SKIP_INTERVAL, now);
                 return;
             }
@@ -146,8 +154,7 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             // Convert quickly; heavy work goes to pipeline thread
             Bitmap frame = ImageProxyUtils.toBitmap(image);
             if (frame == null) {
-                if (listener != null) listener.onScanState(ScanState.ERROR, "Frame->Bitmap failed");
-                notifyFrameProcessed(ScanState.ERROR, "Frame->Bitmap failed", now);
+                notifyFrameProcessed(ScanState.WAITING, "Frame->Bitmap failed", now);
                 return;
             }
 
@@ -180,11 +187,21 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         // Prevent piling OCR jobs
         if (!ocrInFlight.compareAndSet(false, true)) {
             long now = System.currentTimeMillis();
-            // Expose the state to UI (no silent waiting).
-            if (listener != null) listener.onScanState(ScanState.OCR_IN_FLIGHT, "Processing...");
-            notifyFrameProcessed(ScanState.OCR_IN_FLIGHT, MSG_SKIP_OCR_IN_FLIGHT, now);
+            // If we are stuck in-flight for too long, force a reset and request retry.
+            if (ocrInFlightSinceMs > 0L && (now - ocrInFlightSinceMs) > OCR_IN_FLIGHT_TIMEOUT_MS) {
+                ocrInFlight.set(false);
+                ocrInFlightSinceMs = 0L;
+                consecutiveMrzNotFound = 0;
+                consecutiveMrzRejected = 0;
+                consecutiveMrzInvalid = 0;
+                notifyFrameProcessed(ScanState.MRZ_OCR_TIMEOUT, "OCR timeout", now);
+                notifyFrameProcessed(ScanState.MRZ_RETRY_REQUIRED, "Processing took too long. Try again.", now);
+            } else {
+                notifyFrameProcessed(ScanState.OCR_IN_FLIGHT, MSG_SKIP_OCR_IN_FLIGHT, now);
+            }
             return;
         }
+        ocrInFlightSinceMs = System.currentTimeMillis();
 
         try {
             // Frame metrics (for UI/logs)
@@ -200,12 +217,9 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
             int h = uprightFrame.getHeight();
 
             Rect detected = MrzAutoDetector.detect(uprightFrame);
-            boolean roiDetected = (detected != null);
             if (detected == null) {
                 detected = buildFallbackRoi(w, h);
-                long ts = System.currentTimeMillis();
-                if (listener != null) listener.onScanState(ScanState.MRZ_NOT_FOUND, "MRZ ROI not detected");
-                notifyFrameProcessed(ScanState.MRZ_NOT_FOUND, MSG_NO_ROI, ts);
+                notifyFrameProcessed(ScanState.MRZ_NOT_FOUND, MSG_NO_ROI, System.currentTimeMillis());
             }
 
             Rect stable = rectAverager.update(detected, w, h);
@@ -220,7 +234,7 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
 
             Bitmap roiForOcr = scaleMrzRoi(rawRoi);
 
-            runOcrAsync(roiForOcr, metrics, stable, roiDetected);
+            runOcrAsync(roiForOcr, metrics, stable);
 
         } catch (Throwable t) {
             ocrInFlight.set(false);
@@ -228,7 +242,7 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
         }
     }
 
-    private void runOcrAsync(Bitmap roiBmp, OcrMetrics metrics, Rect stable, boolean roiDetected) {
+    private void runOcrAsync(Bitmap roiBmp, OcrMetrics metrics, Rect stable) {
         DualOcrRunner.Mode m = (mode == null) ? DualOcrRunner.Mode.AUTO_DUAL : mode;
 
         DualOcrRunner.runAsync(appContext, m, mlKitEngine, tessEngine, roiBmp, 0,
@@ -236,6 +250,7 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                     @Override
                     public void onSuccess(DualOcrRunner.RunResult rr) {
                         ocrInFlight.set(false);
+                        ocrInFlightSinceMs = 0L;
                         if (finished.get()) return;
 
                         OcrResult ocr;
@@ -251,68 +266,54 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
                             ocr = new OcrResult("", 0L, metrics, OcrResult.Engine.UNKNOWN);
                         }
 
-                        // ❗ MRZ принимаем только если источник OCR = TESSERACT (authority),
-                        // но можем показывать кандидата из ML Kit как low-confidence (UI only).
+                        // MRZ candidate (may come from Tesseract or fallback parsing)
                         MrzResult mrz = (rr != null) ? rr.mrz : null;
-                        if (mrz != null && ocr.engine != OcrResult.Engine.TESSERACT) {
-                            mrz = null;
-                        }
 
-                        // UI feedback (always)
                         if (listener != null) {
                             listener.onOcr(ocr, mrz, stable);
                             notifyOcrState(ocr);
                         }
 
-                        // If Tess MRZ missing, try extracting a provisional MRZ from the available OCR text (UI only).
-                        MrzResult provisionalMrz = null;
-                        if (mrz == null && ocr != null && ocr.rawText != null && !ocr.rawText.trim().isEmpty()) {
-                            provisionalMrz = MrzTextProcessor.parse(ocr.rawText);
-                        }
-
                         if (mrz != null) {
-                            // Validate MRZ (checksum/structure). Only valid MRZ can be "locked".
-                            boolean valid = true;
-                            try {
-                                NormalizedMrz nm = new NormalizedMrz(java.util.Arrays.asList(mrz.asMrzText().split("
-")));
-                                MrzParseResult parsed = MrzParserValidator.parse(nm);
-                                valid = (parsed != null && parsed.valid);
-                            } catch (Throwable ignore) {
-                                // If validator fails unexpectedly, do not block the user; treat as low confidence.
-                                valid = false;
-                            }
+                            // Success resets degradation counters
+                            consecutiveMrzNotFound = 0;
+                            consecutiveMrzRejected = 0;
+                            consecutiveMrzInvalid = 0;
 
-                            if (valid) {
-                                if (listener != null) listener.onScanState(ScanState.MRZ_FOUND, "MRZ detected");
-                                MrzResult finalMrz = aggregator.addAndMaybeAggregate(mrz);
-                                if (finalMrz != null) {
-                                    finished.set(true);
-                                    if (listener != null) listener.onFinalMrz(finalMrz, stable);
-                                }
-                            } else {
-                                if (listener != null) {
-                                    listener.onScanState(ScanState.MRZ_FOUND_INVALID_CHECKSUM, "MRZ checksum/validation failed");
-                                    // Still show MRZ text via onOcr (already sent above).
-                                }
-                            }
-                        } else if (provisionalMrz != null) {
-                            if (listener != null) {
-                                // Show candidate to the user, but do not lock.
-                                listener.onOcr(ocr, provisionalMrz, stable);
-                                listener.onScanState(ScanState.MRZ_FOUND_LOW_CONFIDENCE, "Provisional MRZ (confirm/retry)");
+                            if (listener != null) listener.onScanState(ScanState.MRZ_FOUND, "MRZ detected");
+
+                            MrzResult finalMrz = aggregator.addAndMaybeAggregate(mrz);
+                            if (finalMrz != null) {
+                                finished.set(true);
+                                if (listener != null) listener.onFinalMrz(finalMrz, stable);
                             }
                         } else {
-                            // No usable MRZ yet. Distinguish "not found" vs "ocr rejected".
-                            if (listener != null) {
-                                if (!roiDetected) {
-                                    listener.onScanState(ScanState.MRZ_NOT_FOUND, "MRZ not found");
-                                } else if (ocr == null || ocr.rawText == null || ocr.rawText.trim().isEmpty()) {
-                                    listener.onScanState(ScanState.MRZ_FOUND_OCR_REJECTED, "OCR produced no text");
-                                } else {
-                                    listener.onScanState(ScanState.MRZ_FOUND_OCR_REJECTED, "OCR text rejected as MRZ");
-                                }
+                            // Derive a more specific state for UX / debugging
+                            ScanState state;
+                            String msg;
+
+                            if (ocr.rawText == null || ocr.rawText.trim().isEmpty()) {
+                                consecutiveMrzNotFound++;
+                                state = ScanState.MRZ_NOT_FOUND;
+                                msg = "MRZ not detected";
+                            } else {
+                                consecutiveMrzRejected++;
+                                state = ScanState.MRZ_OCR_REJECTED;
+                                msg = "OCR text detected, but MRZ rejected";
                             }
+
+                            // Escalate to retry when we see repeated failures
+                            if (consecutiveMrzNotFound >= MAX_CONSEC_NOT_FOUND
+                                    || consecutiveMrzRejected >= MAX_CONSEC_REJECTED
+                                    || consecutiveMrzInvalid >= MAX_CONSEC_INVALID) {
+                                state = ScanState.MRZ_RETRY_REQUIRED;
+                                msg = "Unable to read MRZ. Adjust the document and try again.";
+                                consecutiveMrzNotFound = 0;
+                                consecutiveMrzRejected = 0;
+                                consecutiveMrzInvalid = 0;
+                            }
+
+                            if (listener != null) listener.onScanState(state, msg);
                         }
                     }
 
