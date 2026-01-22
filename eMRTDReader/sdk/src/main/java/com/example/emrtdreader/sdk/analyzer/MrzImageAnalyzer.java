@@ -41,8 +41,8 @@ public final class MrzImageAnalyzer implements ImageAnalysis.Analyzer {
     private static final String TAG = "MRZ";
 
     private static final String MSG_NO_ROI = "No MRZ ROI detected; using fallback ROI";
-    private static final String MSG_SKIP_INTERVAL = "Frame skipped: interval";
-    private static final String MSG_SKIP_OCR_IN_FLIGHT = "Frame skipped: OCR in flight";
+    private static final String MSG_SKIP_INTERVAL = "Frame throttled (R00_INTERVAL)";
+    private static final String MSG_SKIP_OCR_IN_FLIGHT = "OCR busy (R06_OCR_BUSY)";
 
     private static final float FALLBACK_ROI_HEIGHT_RATIO = 0.38f;
     private static final float FALLBACK_ROI_SIDE_MARGIN_RATIO = 0.05f;
