@@ -2,13 +2,17 @@ package com.example.emrtdreader.sdk.ocr;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 
+import com.example.emrtdreader.sdk.models.OcrElement;
 import com.example.emrtdreader.sdk.models.OcrMetrics;
 import com.example.emrtdreader.sdk.models.OcrResult;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -75,11 +79,47 @@ public final class MlKitOcrEngine implements OcrEngine {
                     timeoutFuture.cancel(false);
 
                     long dt = System.currentTimeMillis() - t0;
+                    List<OcrElement> elements = new ArrayList<>();
+                    if (text != null) {
+                        try {
+                            for (com.google.mlkit.vision.text.Text.TextBlock b : text.getTextBlocks()) {
+                                Rect bb = b.getBoundingBox();
+                                elements.add(new OcrElement(
+                                        b.getText(),
+                                        bb,
+                                        OcrElement.Level.BLOCK,
+                                        OcrResult.Engine.ML_KIT
+                                ));
+                                for (com.google.mlkit.vision.text.Text.Line ln : b.getLines()) {
+                                    Rect lb = ln.getBoundingBox();
+                                    elements.add(new OcrElement(
+                                            ln.getText(),
+                                            lb,
+                                            OcrElement.Level.LINE,
+                                            OcrResult.Engine.ML_KIT
+                                    ));
+                                    for (com.google.mlkit.vision.text.Text.Element el : ln.getElements()) {
+                                        Rect eb = el.getBoundingBox();
+                                        elements.add(new OcrElement(
+                                                el.getText(),
+                                                eb,
+                                                OcrElement.Level.ELEMENT,
+                                                OcrResult.Engine.ML_KIT
+                                        ));
+                                    }
+                                }
+                            }
+                        } catch (Throwable ignored) {
+                            // Diagnostics only; never fail OCR due to element extraction
+                        }
+                    }
+
                     callback.onSuccess(new OcrResult(
                             text != null ? text.getText() : "",
                             dt,
                             metrics,
-                            OcrResult.Engine.ML_KIT
+                            OcrResult.Engine.ML_KIT,
+                            elements
                     ));
                 })
                 .addOnFailureListener(e -> {

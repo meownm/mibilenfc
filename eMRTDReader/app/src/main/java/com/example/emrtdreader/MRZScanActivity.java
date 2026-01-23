@@ -158,19 +158,20 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
 
     private void setupButtons() {
         logCopyButton.setOnClickListener(v -> {
-            // Copy visible log text if available; fallback to diagnostic payload
+            // Copy only the visible log text (do not copy scan mode / diagnostics)
             String logs = "";
             if (logTextView != null) {
-                CharSequence logChars = logTextView.getText();
-                if (logChars != null) {
-                    logs = logChars.toString();
+                CharSequence cs = logTextView.getText();
+                if (cs != null) {
+                    logs = cs.toString();
                 }
             }
-            // If there are no visible logs (e.g. early in the scan), use the diagnostic payload
-            String payload = (logs != null && !logs.trim().isEmpty()) ? logs : buildLogPayload();
-            android.util.Log.i("MRZ", payload);
-            copyToClipboard(payload);
-            Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show();
+            if (logs == null || logs.trim().isEmpty()) {
+                Toast.makeText(this, "No logs to copy", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            copyToClipboard(logs);
+            Toast.makeText(this, "Copied logs to clipboard", Toast.LENGTH_SHORT).show();
         });
 
         manualButton.setOnClickListener(v -> {
