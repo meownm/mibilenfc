@@ -158,13 +158,11 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
 
     private void setupButtons() {
         logCopyButton.setOnClickListener(v -> {
-            // Copy only the visible log text (do not copy scan mode / diagnostics)
+            // Copy only visible logs (do not copy scan mode / diagnostics)
             String logs = "";
             if (logTextView != null) {
                 CharSequence cs = logTextView.getText();
-                if (cs != null) {
-                    logs = cs.toString();
-                }
+                if (cs != null) logs = cs.toString();
             }
             if (logs == null || logs.trim().isEmpty()) {
                 Toast.makeText(this, "No logs to copy", Toast.LENGTH_SHORT).show();

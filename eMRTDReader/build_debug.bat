@@ -1,25 +1,37 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 
-REM Build Debug APK (Windows)
-REM Usage: double-click or run from cmd/PowerShell.
+echo ==============================
+echo Building eMRTDReader (DEBUG)
+echo ==============================
 
-cd /d %~dp0
-
-if exist gradlew.bat (
-  call gradlew.bat clean assembleDebug
-) else (
-  echo gradlew.bat not found. Make sure you are in the eMRTDReader root.
-  exit /b 1
+call gradlew clean
+if errorlevel 1 (
+    echo.
+    echo !!! CLEAN FAILED !!!
+    pause
+    exit /b 1
 )
 
-if %ERRORLEVEL% NEQ 0 (
-  echo Build failed.
-  exit /b %ERRORLEVEL%
+call gradlew :sdk:compileDebugJavaWithJavac
+if errorlevel 1 (
+    echo.
+    echo !!! SDK BUILD FAILED !!!
+    pause
+    exit /b 1
+)
+
+call gradlew :app:assembleDebug
+if errorlevel 1 (
+    echo.
+    echo !!! APP BUILD FAILED !!!
+    pause
+    exit /b 1
 )
 
 echo.
-echo Build OK. APK:
-echo   app\build\outputs\apk\debug\app-debug.apk
-echo.
+echo ==============================
+echo BUILD SUCCESS
+echo ==============================
+pause
 endlocal
