@@ -1,79 +1,48 @@
-# MRZ OCR: перечень файлов и назначение
+# MRZ OCR File Map
 
-_Дата: 2026-01-22_
+This document provides a high‑level overview of the key Java classes involved in the MRZ scanning and OCR pipeline in the **eMRTDReader** project.  It is intended as a navigational aid when reviewing or modifying the code.
 
-Этот файл фиксирует, где именно находится логика MRZ OCR в репозитории и зачем нужен каждый файл.
+## Image acquisition & analysis
 
-## Быстрый ответ на вопрос про Kotlin
+- **`sdk/analyzer/MrzImageAnalyzer.java`** – entry point for CameraX; receives `ImageProxy` frames from the camera, applies throttling via a rate limiter and hands frames into the MRZ pipeline.
+- **`sdk/analyzer/RateLimiter.java`** – simple utility to drop frames when analysis is still in progress.
+- **`sdk/analyzer/FrameEnvelope.java`** – wraps raw frames together with metadata (timestamp, rotation, etc.) for the pipeline.
+- **`sdk/analyzer/YuvBitmapConverter.java`** and **`sdk/analyzer/ImageProxyUtils.java`** – convert YUV `ImageProxy` frames to bitmaps for downstream processing.
 
-В текущем архиве `.kt` файлов нет. Проект целиком на Java.
+## Pipeline & state
 
-## MRZ OCR (UI + SDK)
+- **`sdk/analysis/MrzPipelineFacade.java`** – orchestrates the full MRZ detection flow: gating, localisation, OCR, parsing and state updates.  It exposes a simple API to the analyzer.
+- **`sdk/analysis/MrzFrameGate.java`** – quick quality gate (blur, brightness and contrast checks) to drop unusable frames before heavy processing.
+- **`sdk/analysis/MrzLocalizer.java`** – locates the MRZ region in the frame (heuristic search).
+- **`sdk/analysis/MrzPipelineExecutor.java`** – background executor that runs MRZ processing jobs one at a time.
+- **`sdk/analysis/MrzPipelineParser.java`**, **`sdk/analysis/DefaultMrzPipelineParser.java`** – parse OCR output into a structured `MrzResult`.
+- **`sdk/analysis/MrzStateMachine.java`** – finite‑state machine tracking overall scan state.
+- **`sdk/analysis/ScanState.java`** – enumeration for high‑level scanner state (waiting, scanning, done, error).
 
-- `eMRTDReader/app/src/main/java/com/example/emrtdreader/MRZScanActivity.java`
-  - UI-экран сканирования MRZ. Запуск CameraX, выбор режима OCR, отображение логов, подсветка состояния, ручной ввод MRZ-полей.
-- `eMRTDReader/app/src/main/res/layout/activity_mrz_scan.xml`
-  - Разметка экрана MRZScanActivity (PreviewView, overlay, лог, элементы ручного ввода).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/analyzer/MrzImageAnalyzer.java`
-  - CameraX ImageAnalysis.Analyzer: конвертация кадра, детект ROI MRZ, запуск OCR (DualOcrRunner), агрегация результатов, выдача ScanState.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/analyzer/ImageProxyUtils.java`
-  - Надёжная конвертация ImageProxy(YUV_420_888) в Bitmap через NV21+JPEG. Критична для корректной обработки кадров.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/analyzer/MrzPipelineExecutor.java`
-  - Executor для фонового MRZ-пайплайна в пакете analyzer. Сейчас реализован как «не принимать новые задачи, пока выполняется текущая».
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/analyzer/YuvBitmapConverter.java`
-  - Альтернативный конвертер YUV->Bitmap для тестов/служебных целей (используется в юнит-тестах).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/analyzer/RateLimiter.java`
-  - Ограничение частоты запуска тяжёлых операций (OCR) на потоке анализатора.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/analyzer/FrameEnvelope.java`
-  - Контейнер для данных кадра/ROI/таймингов (используется в тестах и внутренней логике).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/DualOcrRunner.java`
-  - Оркестратор OCR: ML Kit / Tesseract / AUTO_DUAL. Политика: MRZ формируется только из Tesseract, ML Kit используется для «быстрого текста/фидбека».
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/MlKitOcrEngine.java`
-  - Движок OCR на базе ML Kit. Возвращает сырой текст, используется как быстрый источник текста.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/TesseractOcrEngine.java`
-  - Движок OCR на базе tess-two. Вызывает TesseractDataManager для подготовки traineddata, выполняет распознавание.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/TesseractMrzEngine.java`
-  - MRZ-специфичный режим Tesseract (настройки whitelist/psm, конфигурация под MRZ).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/TesseractDataManager.java`
-  - Подготовка traineddata: при отсутствии скачивает файл с GitHub tessdata_best в /files/tessdata. Для оффлайна требуется локальная поставка traineddata.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/MrzAutoDetector.java`
-  - Детерминированный детектор полосы MRZ по энергии границ (без ML). Возвращает Rect ROI.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/RectAverager.java`
-  - Стабилизация ROI между кадрами (усреднение/сглаживание прямоугольника).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/MrzPreprocessor.java`
-  - Предобработка ROI перед OCR (градации серого, бинаризация, масштабирование и т.п.).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/ThresholdSelector.java`
-  - Подбор порога/параметров бинаризации под MRZ (адаптивные варианты).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/AdaptiveThreshold.java`
-  - Алгоритм адаптивной бинаризации для подготовительного этапа.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/OcrRouter.java`
-  - Маршрутизация между движками OCR (в т.ч. выбор режима, параметры).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/FrameStats.java`
-  - Метрики качества изображения (яркость/контраст/резкость/шум) по пикселям Bitmap. Используется для логов и эвристик.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/MrzTextProcessor.java`
-  - Постобработка OCR-текста под MRZ (очистка, нормализация, извлечение кандидатов строк).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/MrzCandidateValidator.java`
-  - Фильтрация кандидатов MRZ (длина, допустимые символы, базовые проверки).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/ocr/MrzScore.java`
-  - Скоринг кандидатов MRZ (в т.ч. на основе checksum/формата).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/mrz/MrzTextNormalizer.java`
-  - Нормализация MRZ-текста в канонический вид (замены, очистка, приведение длины строк).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/utils/MrzBurstAggregator.java`
-  - Агрегация результатов по нескольким кадрам (voting/burst) и выдача «зафиксированного» MRZ.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/utils/MrzChecksum.java`
-  - Реализация checksum ICAO 9303.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/utils/MrzValidation.java`
-  - Проверка контрольных сумм для TD3/TD1 и получение MrzChecksums.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/utils/MrzRepair.java`
-  - Checksum-guided repair: точечные замены O/0, I/1 и др. в числовых полях MRZ.
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/utils/MrzNormalizer.java`
-  - Утилиты общего уровня для нормализации MRZ (взаимодействует с MrzTextNormalizer).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/utils/MrzParserValidator.java`
-  - Валидация результатов парсинга MRZ (форматы, длины, минимальные проверки).
-- `eMRTDReader/sdk/src/main/java/com/example/emrtdreader/sdk/utils/MrzParser.java`
-  - Преобразование MrzResult -> AccessKey.Mrz (docNumber/dob/doe) для NFC доступа. Требует корректной длины строк MRZ.
+## OCR & preprocessing
 
-## Примечания по runtime-зависимостям
+- **`sdk/ocr/MrzPreprocessor.java`** – preprocesses the MRZ bitmap (deskewing, cropping, greyscale, adaptive threshold).
+- **`sdk/ocr/DualOcrRunner.java`** – coordinates Tesseract and ML Kit OCR engines; in *AUTO_DUAL* mode runs both engines on good frames.
+- **`sdk/ocr/MrzOcrEngine.java`**, **`sdk/ocr/MrzTextProcessor.java`** – wrap the OCR engines and post‑process their output.
+- **`sdk/ocr/MlKitOcrEngine.java`**, **`sdk/ocr/TesseractOcrEngine.java`** – concrete OCR implementations.
+- **`sdk/ocr/MrzCandidateValidator.java`**, **`sdk/ocr/MrzAutoDetector.java`** – helpers to validate candidate MRZ blocks and select the best one.
 
-- `TesseractDataManager` при отсутствии `*.traineddata` скачивает их с GitHub в каталог приложения. Для закрытого контура нужно заранее положить traineddata локально или заменить источник загрузки на внутренний.
-- В SDK предусмотрена загрузка CSCA сертификатов из `assets/csca`, но в архиве нет самих сертификатов, только README.
+## Models & parsing
+
+- **`sdk/models/MrzResult.java`** – immutable representation of a parsed MRZ, including confidence and parsed fields.
+- **`sdk/models/OcrResult.java`** – raw OCR output plus metrics (timings, brightness, contrast, sharpness).
+- **`sdk/models/MrzFormat.java`** and **`sdk/models/MrzFields.java`** – enumerate known MRZ formats and parsed field indices.
+- **`sdk/utils/MrzParser.java`** – converts a parsed MRZ into an `AccessKey.Mrz` object for NFC.
+
+## UI & Activity
+
+- **`app/src/main/java/com/example/emrtdreader/MRZScanActivity.java`** – Android activity driving the camera preview, MRZ analysis and navigation to NFC reading.
+- **`sdk/ui/MrzDebugOverlayView.java`** – overlay view used to draw MRZ bounding boxes and debug metrics on top of the preview.
+
+## Utilities
+
+- **`sdk/ocr/RectAverager.java`** – smooths bounding box positions across frames.
+- **`sdk/ocr/FrameStats.java`** – computes brightness, contrast and sharpness metrics from a bitmap.
+- **`sdk/utils/MrzChecksum.java`**, **`sdk/utils/MrzValidation.java`**, **`sdk/utils/MrzRepair.java`** – helper classes for MRZ checksum validation and repair.
+
+Use this file as a starting point when exploring the MRZ scanning pipeline.  Many classes have unit tests under `sdk/src/test/java` that illustrate expected behaviour.

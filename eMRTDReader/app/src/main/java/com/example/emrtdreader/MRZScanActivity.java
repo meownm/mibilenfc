@@ -53,7 +53,6 @@ import com.example.emrtdreader.sdk.utils.MrzParser;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.Locale;
-import java.util.Objects;
 
 public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyzer.Listener {
 
@@ -76,12 +75,6 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
     private Button confirmManualButton;
 
     private final ExecutorService analysisExecutor = Executors.newSingleThreadExecutor();
-
-    // Scan state logging (Logcat) — keeps UI and logs in sync for debugging.
-    private ScanState lastScanState = null;
-    private String lastScanMessage = null;
-    private long lastScanStateLogAtMs = 0L;
-
 
     private final MlKitOcrEngine mlKit = new MlKitOcrEngine();
     private final TesseractOcrEngine tess = new TesseractOcrEngine();
@@ -165,7 +158,16 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
 
     private void setupButtons() {
         logCopyButton.setOnClickListener(v -> {
-            String payload = buildLogPayload();
+            // Copy visible log text if available; fallback to diagnostic payload
+            String logs = "";
+            if (logTextView != null) {
+                CharSequence logChars = logTextView.getText();
+                if (logChars != null) {
+                    logs = logChars.toString();
+                }
+            }
+            // If there are no visible logs (e.g. early in the scan), use the diagnostic payload
+            String payload = (logs != null && !logs.trim().isEmpty()) ? logs : buildLogPayload();
             android.util.Log.i("MRZ", payload);
             copyToClipboard(payload);
             Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show();
@@ -341,16 +343,6 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
 
     @Override
     public void onScanState(ScanState state, String message) {
-        // Logcat: emit on state change (or if message changed), with basic throttling.
-        long now = android.os.SystemClock.elapsedRealtime();
-        boolean changed = (state != lastScanState) || !Objects.equals(message, lastScanMessage);
-        if (changed || (now - lastScanStateLogAtMs) > 1000) {
-            android.util.Log.i("MRZ_STATE", "state=" + state + " msg=" + (message == null ? "" : message));
-            lastScanState = state;
-            lastScanMessage = message;
-            lastScanStateLogAtMs = now;
-        }
-
         runOnUiThread(() -> {
             updateOverlayColor(resolveOverlayColor(state));
             appendScanStateLogLine(state, message);
@@ -486,48 +478,18 @@ public class MRZScanActivity extends AppCompatActivity implements MrzImageAnalyz
         if (state == null) {
             return null;
         }
-
-        String detail = (message == null) ? "" : message.trim();
-        if (!detail.isEmpty()) {
-            detail = " | " + detail;
-        }
-
         switch (state) {
             case ML_TEXT_FOUND:
-                return buildTimestampedLogLine("ML text detected" + detail);
+                return buildTimestampedLogLine("ML text detected");
             case TESS_TEXT_FOUND:
-                return buildTimestampedLogLine("Tess text detected" + detail);
+                return buildTimestampedLogLine("Tess text detected");
             case WAITING:
-                return buildTimestampedLogLine("Waiting for MRZ" + detail);
-
-            case OCR_IN_FLIGHT:
-                return buildTimestampedLogLine("OCR in progress" + detail);
-
-            case MRZ_NOT_FOUND:
-                return buildTimestampedLogLine("MRZ not found" + detail);
-
-            case MRZ_OCR_REJECTED:
-                return buildTimestampedLogLine("MRZ OCR rejected" + detail);
-
-            case MRZ_INVALID:
-                return buildTimestampedLogLine("MRZ invalid (checksum/format)" + detail);
-
-            case MRZ_OCR_TIMEOUT:
-                return buildTimestampedLogLine("MRZ OCR timeout" + detail);
-
-            case MRZ_RETRY_REQUIRED:
-                return buildTimestampedLogLine("Retry required" + detail);
-
-            case MRZ_FOUND:
-                return buildTimestampedLogLine("MRZ found" + detail);
-
+                return buildTimestampedLogLine("Waiting for MRZ");
             case ERROR:
-                String err = (message == null || message.trim().isEmpty()) ? "Unknown error" : message.trim();
-                return buildTimestampedLogLine("Error: " + err);
-
+                String detail = (message == null || message.trim().isEmpty()) ? "Unknown error" : message.trim();
+                return buildTimestampedLogLine("Error: " + detail);
             default:
-                // Fallback: always log unknown/new states to avoid silent loss of information.
-                return buildTimestampedLogLine(state.name() + detail);
+                return null;
         }
     }
 
